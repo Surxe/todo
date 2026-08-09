@@ -1,0 +1,282 @@
+#!/usr/bin/env bash
+#
+# todo - central, data-oriented dev-idea capture.
+#
+#   Capture is instant and dumb (append raw text, no model, no network).
+#   Classification is deferred and batched via a headless `claude -p` call,
+#   so its reasoning never enters the session you captured from.
+#
+# See README.md for the data model and design.
+set -euo pipefail
+
+TODO_DIR="${TODO_DIR:-/srv/dev/repos/todo}"
+TODO_MODEL="${TODO_MODEL:-haiku}"
+TODO_FALLBACK_MODEL="${TODO_FALLBACK_MODEL:-}"   # empty = none; if set, use a Sonnet-4-or-lower id, NOT the `sonnet` alias
+TODO_REPOLIST="${TODO_REPOLIST:-/srv/dev/repos/my-system/users/dev/sections/repo-descriptions.md}"
+
+INBOX="$TODO_DIR/inbox.jsonl"
+TODOS="$TODO_DIR/todos.jsonl"
+SEQ="$TODO_DIR/.seq"
+LOCK="$TODO_DIR/.lock"
+LOGDIR="$TODO_DIR/logs"
+PROMPT="$TODO_DIR/classify/system-prompt.md"
+
+die() { printf 'todo: %s\n' "$*" >&2; exit 1; }
+
+command -v jq  >/dev/null 2>&1 || die "jq not found on PATH"
+
+now() { date -Iseconds; }
+
+# Ensure store files exist (a fresh clone or a bad TODO_DIR shouldn't crash add).
+ensure_store() {
+    [ -d "$TODO_DIR" ] || die "TODO_DIR does not exist: $TODO_DIR"
+    touch "$INBOX" "$TODOS"
+}
+
+count() { jq -s 'length' "$1"; }
+
+# Monotonic, never-reused ids. Backed by a tracked counter (.seq) so a removed
+# id is never handed out again; seeded from the current file max on first use.
+# Call only while holding the lock.
+next_id() {
+    local filemax seqval max nxt
+    filemax=$(cat "$INBOX" "$TODOS" 2>/dev/null \
+        | jq -rs 'map(.id | ltrimstr("t-") | tonumber) | (max // 0)')
+    seqval=$(cat "$SEQ" 2>/dev/null || echo 0)
+    max=$(( filemax > seqval ? filemax : seqval ))
+    nxt=$(( max + 1 ))
+    printf '%s' "$nxt" > "$SEQ"
+    printf 't-%04d' "$nxt"
+}
+
+# Commit the store if anything changed. Local only; never pushes, never needs auth.
+commit() {
+    git -C "$TODO_DIR" add -A 2>/dev/null || return 0
+    git -C "$TODO_DIR" diff --cached --quiet 2>/dev/null && return 0
+    git -C "$TODO_DIR" commit -q -m "$1" 2>/dev/null || true
+}
+
+# Find a record by id in todos then inbox; prints the JSON object or nothing.
+find_record() {
+    jq -c --arg id "$1" 'select(.id==$id)' "$TODOS" "$INBOX" 2>/dev/null | head -n1
+}
+
+# ---------------------------------------------------------------------------
+
+cmd_add() {
+    [ "$#" -gt 0 ] || die "usage: todo add <text…>"
+    ensure_store
+    local text="$*" id created rec
+    (
+        flock 9
+        id=$(next_id)
+        created=$(now)
+        rec=$(jq -cn --arg id "$id" --arg created "$created" --arg text "$text" \
+            '{id:$id, created:$created, text:$text, status:"raw"}')
+        printf '%s\n' "$rec" >> "$INBOX"
+        commit "add $id"
+        printf '✓ todo %s captured\n' "$id"
+    ) 9>"$LOCK"
+}
+
+cmd_classify() {
+    ensure_store
+    command -v claude >/dev/null 2>&1 || die "claude CLI not found on PATH"
+
+    # Snapshot the inbox under lock, then release it so `add` never blocks on the
+    # (slow) model call.
+    local snapshot
+    snapshot=$(mktemp)
+    ( flock 9; cp "$INBOX" "$snapshot"; ) 9>"$LOCK"
+
+    local n
+    n=$(count "$snapshot")
+    if [ "$n" -eq 0 ]; then rm -f "$snapshot"; echo "nothing to classify"; return 0; fi
+
+    local items repolist payload sysprompt
+    items=$(jq -sc '[.[] | {id, text}]' "$snapshot")
+    repolist=$(cat "$TODO_REPOLIST" 2>/dev/null || echo "(repo list unavailable)")
+    payload=$(printf 'Repos:\n\n%s\n\nTodos (classify each):\n%s\n' "$repolist" "$items")
+    sysprompt=$(cat "$PROMPT")
+
+    local raw result clean fb=()
+    [ -n "$TODO_FALLBACK_MODEL" ] && fb=(--fallback-model "$TODO_FALLBACK_MODEL")
+
+    raw=$(claude -p \
+        --model "$TODO_MODEL" \
+        "${fb[@]}" \
+        --output-format json \
+        --disallowed-tools Bash Edit Write Read Glob Grep WebFetch WebSearch Task \
+        --append-system-prompt "$sysprompt" \
+        "$payload" 2>&1) || { log_fail "$snapshot" "$payload" "$raw"; die "classifier call failed (see logs/)"; }
+
+    result=$(jq -r '.result // empty' <<<"$raw" 2>/dev/null || true)
+    # Strip a leading/trailing ``` fence if the model added one.
+    clean=$(printf '%s' "$result" | sed -e '1{/^```/d}' -e '${/^```/d}')
+
+    if ! jq -e 'type=="array"' >/dev/null 2>&1 <<<"$clean"; then
+        log_fail "$snapshot" "$payload" "$raw"
+        die "classifier returned unparseable output (items left in inbox; see logs/)"
+    fi
+
+    # Merge enrichment onto the raw records, applying defaults for anything the
+    # model omitted or left unsure.
+    local merged
+    merged=$(jq -s --slurpfile e <(printf '%s' "$clean") '
+        ($e[0]) as $enr
+        | [ .[] as $r
+            | ([ $enr[] | select(.id == $r.id) ][0]) as $x
+            | { id: $r.id, created: $r.created, text: $r.text,
+                title:    ($x.title // $r.text),
+                repo:     ($x.repo // null),
+                type:     ($x.type // "idea"),
+                tags:     ($x.tags // []),
+                priority: ($x.priority // null),
+                dupe_of:  ($x.dupe_of // null),
+                status: "open", done: null } ]' "$snapshot")
+
+    local ids
+    ids=$(jq -c '[.[].id]' <<<"$items")
+
+    (
+        flock 9
+        jq -c '.[]' <<<"$merged" >> "$TODOS"
+        local tmp; tmp=$(mktemp)
+        jq -c --argjson ids "$ids" 'select([.id] | inside($ids) | not)' "$INBOX" > "$tmp" 2>/dev/null || : > "$tmp"
+        mv "$tmp" "$INBOX"
+        commit "classify $n"
+    ) 9>"$LOCK"
+
+    log_ok "$payload" "$raw"
+    rm -f "$snapshot"
+    echo "classified $n"
+}
+
+log_ok()   { mkdir -p "$LOGDIR"; jq -n --arg in "$1" --arg out "$2" --arg ts "$(now)" \
+                '{ts:$ts, ok:true, input:$in, output:$out}' > "$LOGDIR/classify-$(date +%Y%m%d-%H%M%S).json"; }
+log_fail() { mkdir -p "$LOGDIR"; jq -n --arg in "$2" --arg out "$3" --arg ts "$(now)" \
+                '{ts:$ts, ok:false, input:$in, output:$out}' > "$LOGDIR/classify-$(date +%Y%m%d-%H%M%S)-FAIL.json"; }
+
+cmd_list() {
+    ensure_store
+    local repo="" type="" scope="open"
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --repo) repo="$2"; shift 2;;
+            --type) type="$2"; shift 2;;
+            --all)  scope="all"; shift;;
+            --done) scope="done"; shift;;
+            *) die "unknown flag: $1";;
+        esac
+    done
+
+    if [ "$(count "$INBOX")" -gt 0 ]; then
+        printf 'classifying %s new…\n' "$(count "$INBOX")" >&2
+        # Subshell so a classify failure (die/exit) can't abort the whole list.
+        ( cmd_classify ) >/dev/null 2>&1 || printf 'todo: classify failed; showing existing items\n' >&2
+    fi
+
+    { printf 'ID\tREPO\tTYPE\tTAGS\tTITLE\n'
+      jq -r --arg repo "$repo" --arg type "$type" --arg scope "$scope" '
+        select( ($scope=="all") or (.status==$scope) )
+        | select( ($repo=="") or (.repo==$repo) )
+        | select( ($type=="") or (.type==$type) )
+        | [ .id, (.repo // "-"), .type,
+            ((.tags // []) | join(",") | if .=="" then "-" else . end),
+            .title ] | @tsv' "$TODOS"
+    } | column -t -s $'\t'
+}
+
+cmd_show() {
+    [ "$#" -eq 1 ] || die "usage: todo show <id>"
+    local r; r=$(find_record "$1")
+    [ -n "$r" ] || die "no such todo: $1"
+    jq . <<<"$r"
+}
+
+# Rewrite todos.jsonl through a jq program, under lock, then commit.
+mutate_todos() {
+    local prog="$1" msg="$2" tmp
+    (
+        flock 9
+        tmp=$(mktemp)
+        jq -c "$prog" "$TODOS" > "$tmp"
+        mv "$tmp" "$TODOS"
+        commit "$msg"
+    ) 9>"$LOCK"
+}
+
+cmd_done() {
+    [ "$#" -eq 1 ] || die "usage: todo done <id>"
+    ensure_store
+    local id="$1"
+    if ! jq -e --arg id "$id" 'select(.id==$id)' "$TODOS" >/dev/null 2>&1; then
+        # Not classified yet? Drain the inbox, then it will be in todos.
+        if jq -e --arg id "$id" 'select(.id==$id)' "$INBOX" >/dev/null 2>&1; then
+            ( cmd_classify ) >/dev/null 2>&1 || true
+        else
+            die "no such todo: $id"
+        fi
+    fi
+    mutate_todos "if .id==\"$id\" then .status=\"done\" | .done=\"$(now)\" else . end" "done $id"
+    echo "done $id"
+}
+
+cmd_reopen() {
+    [ "$#" -eq 1 ] || die "usage: todo reopen <id>"
+    ensure_store
+    mutate_todos "if .id==\"$1\" then .status=\"open\" | .done=null else . end" "reopen $1"
+    echo "reopened $1"
+}
+
+cmd_rm() {
+    [ "$#" -eq 1 ] || die "usage: todo rm <id>"
+    ensure_store
+    local id="$1"
+    (
+        flock 9
+        local t
+        for f in "$TODOS" "$INBOX"; do
+            t=$(mktemp)
+            jq -c --arg id "$id" 'select(.id != $id)' "$f" > "$t" 2>/dev/null || : > "$t"
+            mv "$t" "$f"
+        done
+        commit "rm $id"
+    ) 9>"$LOCK"
+    echo "removed $id"
+}
+
+cmd_sync() {
+    git -C "$TODO_DIR" push
+}
+
+usage() {
+    cat <<'EOF'
+usage: todo <command> [args]
+
+  add <text…>                          capture a raw todo (instant, no model)
+  classify                             drain the inbox through the classifier
+  list [--repo X|--type T|--all|--done]  list todos (auto-classifies pending)
+  show <id>                            print a record
+  done <id> | reopen <id> | rm <id>    lifecycle
+  sync                                 git push
+EOF
+}
+
+main() {
+    local cmd="${1:-}"; shift || true
+    case "$cmd" in
+        add)      cmd_add "$@";;
+        classify) cmd_classify "$@";;
+        list|ls)  cmd_list "$@";;
+        show)     cmd_show "$@";;
+        done)     cmd_done "$@";;
+        reopen)   cmd_reopen "$@";;
+        rm)       cmd_rm "$@";;
+        sync)     cmd_sync "$@";;
+        ""|-h|--help|help) usage;;
+        *) die "unknown command: $cmd (try: todo help)";;
+    esac
+}
+
+main "$@"

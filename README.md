@@ -1,0 +1,67 @@
+# todo
+
+A central capture system for dev/project ideas, driven from Claude Code sessions
+(`! todo add …`) or a plain shell. Capture is instant and dumb; a low-tier
+`claude -p` call classifies captures later, in a subprocess, so its reasoning
+never pollutes the session you captured from.
+
+## Install
+
+```sh
+./install.sh          # copies bin/todo -> ~/.local/bin/todo
+```
+
+Re-run after editing `bin/todo` (it's a copy, not a symlink). Dev-only by design
+— see the note in `install.sh`.
+
+Requires `jq`, `git`, `flock`, and the `claude` CLI on PATH.
+
+## Usage
+
+```sh
+todo add <text…>                 # instant capture (no model, no network)
+todo classify                    # drain the inbox through the classifier
+todo list [--repo X] [--type idea|task] [--all] [--done]
+todo show <id>
+todo done <id>
+todo reopen <id>
+todo rm <id>
+todo sync                        # git push (the only network op)
+```
+
+`todo list` auto-classifies any pending inbox items first.
+
+## Data model
+
+Two JSON-lines files, both tracked in git — the history is the archive.
+
+- `inbox.jsonl` — append-only raw captures: `{id, created, text, status:"raw"}`
+- `todos.jsonl` — classified records:
+  `{id, created, text, title, repo, type, tags, priority, dupe_of, status, done}`
+
+`id` is a zero-padded sequential `t-NNNN`. Every mutating command auto-commits
+locally; pushing is manual via `todo sync`.
+
+## Classification
+
+`todo classify` batches all pending inbox items into a single headless call:
+
+```
+claude -p --model haiku --output-format json --disallowed-tools '*' \
+  --append-system-prompt classify/system-prompt.md  <payload>
+```
+
+The payload is the batch plus the repo list from
+`my-system/users/dev/sections/repo-descriptions.md` (override with
+`$TODO_REPOLIST`) — the model's only context. It never asks questions; it
+defaults every field when unsure (see `classify/system-prompt.md`). Raw input
+and output of each call are logged to `logs/` (gitignored) for prompt tuning.
+
+## Config (env)
+
+| Var                   | Default |
+|-----------------------|---------|
+| `TODO_DIR`            | `/srv/dev/repos/todo` |
+| `TODO_MODEL`          | `haiku` |
+| `TODO_FALLBACK_MODEL` | (none) — if set, use a Sonnet-4-or-lower id, never the `sonnet` alias |
+| `TODO_REPOLIST`       | `/srv/dev/repos/my-system/users/dev/sections/repo-descriptions.md` |
