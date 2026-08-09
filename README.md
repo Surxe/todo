@@ -60,6 +60,17 @@ The payload is the batch plus the repo list from
 defaults every field when unsure (see `classify/system-prompt.md`). Raw input
 and output of each call are logged to `logs/` (gitignored) for prompt tuning.
 
+## Desktop capture (ethan)
+
+The Plasma session runs as `ethan`, who can't run the dev-only `todo` binary.
+For quick GUI capture, my-system deploys a small reviewed companion,
+`todo-capture` (source: `my-system/users/ethan/localbin/todo-capture`), into
+ethan's `~/.local/bin`. It only *appends* a raw record to the shared inbox (no
+model, no dev-repo code), so classification still happens later via dev's
+`todo classify`. Two launchers ship with it: "Todo: Quick Capture" (a `kdialog`
+one-field prompt) and "Todo: Capture Clipboard" (`wl-paste`). Bind a global
+shortcut to either in System Settings → Shortcuts.
+
 ## Config (env)
 
 | Var                   | Default |
