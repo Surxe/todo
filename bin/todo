@@ -246,10 +246,6 @@ cmd_rm() {
     echo "removed $id"
 }
 
-cmd_sync() {
-    git -C "$TODO_DIR" push
-}
-
 usage() {
     cat <<'EOF'
 usage: todo <command> [args]
@@ -259,7 +255,6 @@ usage: todo <command> [args]
   list [--repo X|--type T|--all|--done]  list todos (auto-classifies pending)
   show <id>                            print a record
   done <id> | reopen <id> | rm <id>    lifecycle
-  sync                                 git push
 EOF
 }
 
@@ -273,7 +268,6 @@ main() {
         done)     cmd_done "$@";;
         reopen)   cmd_reopen "$@";;
         rm)       cmd_rm "$@";;
-        sync)     cmd_sync "$@";;
         ""|-h|--help|help) usage;;
         *) die "unknown command: $cmd (try: todo help)";;
     esac

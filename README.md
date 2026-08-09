@@ -26,8 +26,11 @@ todo show <id>
 todo done <id>
 todo reopen <id>
 todo rm <id>
-todo sync                        # git push (the only network op)
 ```
+
+Pushing is intentionally not a command: every mutating command auto-commits
+locally, and pushes to GitHub are done manually by the owner (the repo requires
+approval to push).
 
 `todo list` auto-classifies any pending inbox items first.
 
@@ -40,7 +43,7 @@ Two JSON-lines files, both tracked in git — the history is the archive.
   `{id, created, text, title, repo, type, tags, priority, dupe_of, status, done}`
 
 `id` is a zero-padded sequential `t-NNNN`. Every mutating command auto-commits
-locally; pushing is manual via `todo sync`.
+locally; pushing is done manually by the owner.
 
 ## Classification
 
