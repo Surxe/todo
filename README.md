@@ -68,8 +68,9 @@ For quick GUI capture, my-system deploys a small reviewed companion,
 ethan's `~/.local/bin`. It only *appends* a raw record to the shared inbox (no
 model, no dev-repo code), so classification still happens later via dev's
 `todo classify`. Two launchers ship with it: "Todo: Quick Capture" (a `kdialog`
-one-field prompt) and "Todo: Capture Clipboard" (`wl-paste`). Bind a global
-shortcut to either in System Settings → Shortcuts.
+one-field prompt) and "Todo: Capture Clipboard" (`wl-paste`). Global hotkeys are
+repo-managed (my-system `users/ethan/kde-global-shortcuts.conf`, asserted by
+install.sh): Meta+T for the dialog, Meta+Shift+T for the clipboard.
 
 ## Config (env)
 
