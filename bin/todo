@@ -170,20 +170,30 @@ cmd_list() {
         esac
     done
 
-    if [ "$(count "$INBOX")" -gt 0 ]; then
-        printf 'classifying %s new…\n' "$(count "$INBOX")" >&2
-        # Subshell so a classify failure (die/exit) can't abort the whole list.
-        ( cmd_classify ) >/dev/null 2>&1 || printf 'todo: classify failed; showing existing items\n' >&2
-    fi
-
+    # Instant and read-only: never classifies, never touches the model. Reads
+    # classified todos AND raw inbox captures, normalizing both to one shape so
+    # freshly-added items show up immediately (with placeholders for the fields
+    # classification would fill in). Run `todo classify` to enrich them.
     { printf 'ID\tREPO\tTYPE\tTAGS\tTITLE\n'
       jq -r --arg repo "$repo" --arg type "$type" --arg scope "$scope" '
-        select( ($scope=="all") or (.status==$scope) )
-        | select( ($repo=="") or (.repo==$repo) )
-        | select( ($type=="") or (.type==$type) )
-        | [ .id, (.repo // "-"), .type,
-            ((.tags // []) | join(",") | if .=="" then "-" else . end),
-            .title ] | @tsv' "$TODOS"
+        ( if .status == "raw" then
+            { id, repo: "-", type: "raw", tags: "-", title: .text, status: "raw" }
+          else
+            { id,
+              repo:  (.repo // "-"),
+              type:  .type,
+              tags:  ((.tags // []) | join(",") | if . == "" then "-" else . end),
+              title: .title,
+              status: .status }
+          end ) as $n
+        | select(
+            ($scope == "all")
+            or ($scope == "open" and ($n.status == "open" or $n.status == "raw"))
+            or ($scope == $n.status)
+          )
+        | select( ($repo == "") or ($n.repo == $repo) )
+        | select( ($type == "") or ($n.type == $type) )
+        | [ $n.id, $n.repo, $n.type, $n.tags, $n.title ] | @tsv' "$TODOS" "$INBOX"
     } | column -t -s $'\t'
 }
 
@@ -252,7 +262,7 @@ usage: todo <command> [args]
 
   add <text…>                          capture a raw todo (instant, no model)
   classify                             drain the inbox through the classifier
-  list [--repo X|--type T|--all|--done]  list todos (auto-classifies pending)
+  list [--repo X|--type T|--all|--done]  list todos (instant; includes unclassified)
   show <id>                            print a record
   done <id> | reopen <id> | rm <id>    lifecycle
 EOF

@@ -32,7 +32,10 @@ Pushing is intentionally not a command: every mutating command auto-commits
 locally, and pushes to GitHub are done manually by the owner (the repo requires
 approval to push).
 
-`todo list` auto-classifies any pending inbox items first.
+`todo list` is instant and read-only: it never calls the model. It shows
+unclassified captures too, with the fields classification would fill in (repo,
+type, tags) rendered as `-` and `type` shown as `raw`. Run `todo classify` to
+enrich them.
 
 ## Data model
 
