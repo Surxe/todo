@@ -5,4 +5,3 @@
 {"id":"t-0005","created":"2026-08-09T15:43:57-05:00","text":"ensure everything in my-system thats used by ethan is copied in, not referenced directly, with the exception of assets, for security reasons. known violator: dev-cc-tmux","status":"raw"}
 {"id":"t-0006","created":"2026-08-09T15:53:59-05:00","text":"claude code status bar that shows weekly and daily limit %","status":"raw"}
 {"id":"t-0007","created":"2026-08-09T15:54:49-05:00","text":"run the existing script to add master ruleset to all existing repos of mine","status":"raw"}
-{"id":"t-0008","created":"2026-08-09T15:55:57-05:00","text":"test unclassified item","status":"raw"}
