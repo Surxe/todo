@@ -40,14 +40,33 @@ ensure_store() {
 }
 
 # Keep the store group-owned + group-writable. Store rewrites go through
-# mktemp+mv (classify/mutate/rm); mktemp's temp file is 0600 dev:dev, and mv
-# makes the store inherit that private mode — silently locking ethan's
-# group-`developers` todo-capture out of the inbox (the root cause of a bumped
-# .seq with no saved record). Re-assert group+mode after every touch/rewrite so
-# capture can always append. Best-effort: read paths and non-owners just skip.
+# mktemp+mv (classify/mutate/rm). Historically mktemp put the temp in /tmp as
+# 0600 dev:dev and the mv made the store inherit that private mode — silently
+# locking ethan's group-`developers` todo-capture out of the inbox (the root
+# cause of a bumped .seq with no saved record). Rewrites now go through
+# store_mv, which asserts the shared group+mode BEFORE the swap so the store is
+# never even transiently private; fix_perms remains a backstop, re-asserting
+# group+mode after every touch. Best-effort: read paths and non-owners skip.
 fix_perms() {
     chgrp "$STORE_GROUP" "$INBOX" "$TODOS" 2>/dev/null || true
     chmod 0664 "$INBOX" "$TODOS" 2>/dev/null || true
+}
+
+# Create a rewrite temp INSIDE the setgid store dir, so it inherits the store's
+# group (`developers`) instead of the caller's private primary group. Callers
+# write their new content into this path, then hand it to store_mv.
+mk_store_tmp() { mktemp "$TODO_DIR/.store.XXXXXX"; }
+
+# Atomically replace a store file with a freshly-written temp, asserting the
+# shared group+0664 mode BEFORE the mv. This closes the window an interrupted
+# rewrite used to leave behind: a store file stranded 0600 dev:dev, unreadable
+# to ethan's group-`developers` reader/capture. Best-effort perms (|| true) so
+# non-owner rewrites still complete; pair with mk_store_tmp.
+store_mv() {
+    local tmp="$1" dest="$2"
+    chgrp "$STORE_GROUP" "$tmp" 2>/dev/null || true
+    chmod 0664 "$tmp" 2>/dev/null || true
+    mv "$tmp" "$dest"
 }
 
 count() { jq -s 'length' "$1"; }
@@ -160,9 +179,9 @@ cmd_classify() {
     (
         flock 9
         jq -c '.[]' <<<"$merged" >> "$TODOS"
-        local tmp; tmp=$(mktemp)
+        local tmp; tmp=$(mk_store_tmp)
         jq -c --argjson ids "$ids" 'select([.id] | inside($ids) | not)' "$INBOX" > "$tmp" 2>/dev/null || : > "$tmp"
-        mv "$tmp" "$INBOX"
+        store_mv "$tmp" "$INBOX"
         commit "classify $n"
     ) 9>"$LOCK"
 
@@ -228,9 +247,9 @@ mutate_todos() {
     local prog="$1" msg="$2" tmp
     (
         flock 9
-        tmp=$(mktemp)
+        tmp=$(mk_store_tmp)
         jq -c "$prog" "$TODOS" > "$tmp"
-        mv "$tmp" "$TODOS"
+        store_mv "$tmp" "$TODOS"
         commit "$msg"
     ) 9>"$LOCK"
 }
@@ -266,9 +285,9 @@ cmd_rm() {
         flock 9
         local t
         for f in "$TODOS" "$INBOX"; do
-            t=$(mktemp)
+            t=$(mk_store_tmp)
             jq -c --arg id "$id" 'select(.id != $id)' "$f" > "$t" 2>/dev/null || : > "$t"
-            mv "$t" "$f"
+            store_mv "$t" "$f"
         done
         commit "rm $id"
     ) 9>"$LOCK"
