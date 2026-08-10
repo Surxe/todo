@@ -1,2 +1,3 @@
 {"id":"t-0013","created":"2026-08-09T23:12:01-05:00","text":"todo bin added for ethan, not just dev.","status":"raw"}
 {"id":"t-0014","created":"2026-08-09T23:43:30-05:00","text":"review my-system readme","status":"raw"}
+{"id":"t-0015","created":"2026-08-09T23:43:56-05:00","text":"review my-system outdated dirs such as mangohud being installed. configs for these should be wired into install.sh. ","status":"raw"}
