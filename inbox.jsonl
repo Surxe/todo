@@ -2,3 +2,4 @@
 {"id":"t-0021","created":"2026-08-10T11:15:28-05:00","text":"OBS track merging script, windows and linux support together, 1 source of truth? copied?","status":"raw"}
 {"id":"t-0022","created":"2026-08-10T11:48:48-05:00","text":"rename History label in WRF discount visualizer to just GitHub","status":"raw"}
 {"id":"t-0023","created":"2026-08-10T11:50:55-05:00","text":"pull all deploy scripts from my-system's install.sh to installers.sh thats called by install.sh. goal is more modularity","status":"raw"}
+{"id":"t-0024","created":"2026-08-10T11:53:32-05:00","text":"when generating repo descriptions from gh, only poll those that have a new SHA, where to persist cache...?","status":"raw"}
