@@ -7,14 +7,20 @@ never pollutes the session you captured from.
 
 ## Install
 
-```sh
-./install.sh          # copies bin/todo -> ~/.local/bin/todo
-```
+`todo` is put on each user's PATH by the **my-system** repo's `users/install.sh`
+(the machine's deploy hub), as a copy of `bin/todo`:
 
-Re-run after editing `bin/todo` (it's a copy, not a symlink). Dev-only by design
-— see the note in `install.sh`.
+- dev   -> `~dev/.local/bin/todo`    (dev's own home; no review gate)
+- ethan -> `~ethan/.local/bin/todo`  (reviewed copy, gated against this repo's
+  `origin/master`)
 
-Requires `jq`, `git`, `flock`, and the `claude` CLI on PATH.
+Run that installer as ethan to refresh both after editing `bin/todo` (it's a
+copy, never a symlink into this dev-writable tree). The store is shared (group
+`developers`, group-writable), and `bin/todo` is generic — so the same binary
+serves both users. The one dev-only command is `classify`; it self-guards.
+
+Requires `jq`, `git`, `flock` on PATH for everyone, plus the `claude` CLI for
+`classify` (dev only).
 
 ## Usage
 
@@ -65,15 +71,15 @@ and output of each call are logged to `logs/` (gitignored) for prompt tuning.
 
 ## Desktop capture (ethan)
 
-The Plasma session runs as `ethan`, who can't run the dev-only `todo` binary.
-For quick GUI capture, my-system deploys a small reviewed companion,
-`todo-capture` (source: `my-system/users/ethan/localbin/todo-capture`), into
-ethan's `~/.local/bin`. It only *appends* a raw record to the shared inbox (no
-model, no dev-repo code), so classification still happens later via dev's
-`todo classify`. Two launchers ship with it: "Todo: Quick Capture" (a `kdialog`
-one-field prompt) and "Todo: Capture Clipboard" (`wl-paste`). Global hotkeys are
-repo-managed (my-system `users/ethan/kde-global-shortcuts.conf`, asserted by
-install.sh): Meta+T for the dialog, Meta+Shift+T for the clipboard.
+The Plasma session runs as `ethan`, who now has the full `todo` command (minus
+the dev-only `classify`). For quick GUI capture, my-system also deploys
+`todo-capture` (source: `my-system/users/ethan/localbin/todo-capture`) into
+ethan's `~/.local/bin`: a thin front-end that prompts (`kdialog` / clipboard) and
+delegates to `todo add`, so it duplicates none of the store logic. Two launchers
+ship with it: "Todo: Quick Capture" (a `kdialog` one-field prompt) and "Todo:
+Capture Clipboard" (`wl-paste`). Global hotkeys are repo-managed (my-system
+`users/ethan/kde-global-shortcuts.conf`, asserted by my-system's install.sh):
+Meta+T for the dialog, Meta+Shift+T for the clipboard.
 
 ## Config (env)
 

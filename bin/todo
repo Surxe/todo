@@ -21,6 +21,11 @@ LOCK="$TODO_DIR/.lock"
 LOGDIR="$TODO_DIR/logs"
 PROMPT="$TODO_DIR/classify/system-prompt.md"
 
+# Group that must retain write access to the store. Derived from the (setgid)
+# store dir so ethan's `todo-capture` (member of that group, but not the file
+# owner) can always append to the shared inbox. See fix_perms.
+STORE_GROUP=$(stat -c %G "$TODO_DIR" 2>/dev/null || echo developers)
+
 die() { printf 'todo: %s\n' "$*" >&2; exit 1; }
 
 command -v jq  >/dev/null 2>&1 || die "jq not found on PATH"
@@ -31,26 +36,57 @@ now() { date -Iseconds; }
 ensure_store() {
     [ -d "$TODO_DIR" ] || die "TODO_DIR does not exist: $TODO_DIR"
     touch "$INBOX" "$TODOS"
+    fix_perms
+}
+
+# Keep the store group-owned + group-writable. Store rewrites go through
+# mktemp+mv (classify/mutate/rm). Historically mktemp put the temp in /tmp as
+# 0600 dev:dev and the mv made the store inherit that private mode — silently
+# locking ethan's group-`developers` todo-capture out of the inbox (the root
+# cause of a bumped .seq with no saved record). Rewrites now go through
+# store_mv, which asserts the shared group+mode BEFORE the swap so the store is
+# never even transiently private; fix_perms remains a backstop, re-asserting
+# group+mode after every touch. Best-effort: read paths and non-owners skip.
+fix_perms() {
+    chgrp "$STORE_GROUP" "$INBOX" "$TODOS" 2>/dev/null || true
+    chmod 0664 "$INBOX" "$TODOS" 2>/dev/null || true
+}
+
+# Create a rewrite temp INSIDE the setgid store dir, so it inherits the store's
+# group (`developers`) instead of the caller's private primary group. Callers
+# write their new content into this path, then hand it to store_mv.
+mk_store_tmp() { mktemp "$TODO_DIR/.store.XXXXXX"; }
+
+# Atomically replace a store file with a freshly-written temp, asserting the
+# shared group+0664 mode BEFORE the mv. This closes the window an interrupted
+# rewrite used to leave behind: a store file stranded 0600 dev:dev, unreadable
+# to ethan's group-`developers` reader/capture. Best-effort perms (|| true) so
+# non-owner rewrites still complete; pair with mk_store_tmp.
+store_mv() {
+    local tmp="$1" dest="$2"
+    chgrp "$STORE_GROUP" "$tmp" 2>/dev/null || true
+    chmod 0664 "$tmp" 2>/dev/null || true
+    mv "$tmp" "$dest"
 }
 
 count() { jq -s 'length' "$1"; }
 
-# Monotonic, never-reused ids. Backed by a tracked counter (.seq) so a removed
-# id is never handed out again; seeded from the current file max on first use.
-# Call only while holding the lock.
+# Next monotonic, never-reused id as a bare number. Seeded from the max of the
+# tracked counter (.seq) and the current file ids, so a removed id is never
+# handed out again. Pure: it does NOT persist .seq — the caller advances the
+# counter only after the record is safely written (see cmd_add), so a failed
+# append can't burn an id and lose the capture. Call only while holding the lock.
 next_id() {
-    local filemax seqval max nxt
+    local filemax seqval
     filemax=$(cat "$INBOX" "$TODOS" 2>/dev/null \
         | jq -rs 'map(.id | ltrimstr("t-") | tonumber) | (max // 0)')
     seqval=$(cat "$SEQ" 2>/dev/null || echo 0)
-    max=$(( filemax > seqval ? filemax : seqval ))
-    nxt=$(( max + 1 ))
-    printf '%s' "$nxt" > "$SEQ"
-    printf 't-%04d' "$nxt"
+    printf '%s' "$(( (filemax > seqval ? filemax : seqval) + 1 ))"
 }
 
 # Commit the store if anything changed. Local only; never pushes, never needs auth.
 commit() {
+    fix_perms
     git -C "$TODO_DIR" add -A 2>/dev/null || return 0
     git -C "$TODO_DIR" diff --cached --quiet 2>/dev/null && return 0
     git -C "$TODO_DIR" commit -q -m "$1" 2>/dev/null || true
@@ -66,20 +102,26 @@ find_record() {
 cmd_add() {
     [ "$#" -gt 0 ] || die "usage: todo add <text…>"
     ensure_store
-    local text="$*" id created rec
+    local text="$*" n id created rec
     (
         flock 9
-        id=$(next_id)
+        n=$(next_id)
+        id=$(printf 't-%04d' "$n")
         created=$(now)
         rec=$(jq -cn --arg id "$id" --arg created "$created" --arg text "$text" \
             '{id:$id, created:$created, text:$text, status:"raw"}')
-        printf '%s\n' "$rec" >> "$INBOX"
+        printf '%s\n' "$rec" >> "$INBOX"   # record lands first — never lose it
+        printf '%s' "$n" > "$SEQ"          # advance the counter only after the append succeeds
         commit "add $id"
         printf '✓ todo %s captured\n' "$id"
     ) 9>"$LOCK"
 }
 
 cmd_classify() {
+    # Dev-only: classify runs `claude -p` and reads the dev-repo prompt/repo-list,
+    # so it is genuine dev code. Every other command operates on the group-writable
+    # shared store and is safe for ethan (see install.sh's ethan deploy).
+    [ "$(id -un)" = dev ] || die "classify is dev-only (runs claude + dev-repo code); ask dev to classify"
     ensure_store
     command -v claude >/dev/null 2>&1 || die "claude CLI not found on PATH"
 
@@ -141,9 +183,9 @@ cmd_classify() {
     (
         flock 9
         jq -c '.[]' <<<"$merged" >> "$TODOS"
-        local tmp; tmp=$(mktemp)
+        local tmp; tmp=$(mk_store_tmp)
         jq -c --argjson ids "$ids" 'select([.id] | inside($ids) | not)' "$INBOX" > "$tmp" 2>/dev/null || : > "$tmp"
-        mv "$tmp" "$INBOX"
+        store_mv "$tmp" "$INBOX"
         commit "classify $n"
     ) 9>"$LOCK"
 
@@ -209,9 +251,9 @@ mutate_todos() {
     local prog="$1" msg="$2" tmp
     (
         flock 9
-        tmp=$(mktemp)
+        tmp=$(mk_store_tmp)
         jq -c "$prog" "$TODOS" > "$tmp"
-        mv "$tmp" "$TODOS"
+        store_mv "$tmp" "$TODOS"
         commit "$msg"
     ) 9>"$LOCK"
 }
@@ -221,9 +263,15 @@ cmd_done() {
     ensure_store
     local id="$1"
     if ! jq -e --arg id "$id" 'select(.id==$id)' "$TODOS" >/dev/null 2>&1; then
-        # Not classified yet? Drain the inbox, then it will be in todos.
+        # Not classified yet? Drain the inbox, then it will be in todos. Only dev
+        # can classify (it's dev code); a non-dev caller gets an honest error
+        # instead of a silent no-op from mutate_todos not finding the raw id.
         if jq -e --arg id "$id" 'select(.id==$id)' "$INBOX" >/dev/null 2>&1; then
-            ( cmd_classify ) >/dev/null 2>&1 || true
+            if [ "$(id -un)" = dev ]; then
+                ( cmd_classify ) >/dev/null 2>&1 || true
+            else
+                die "$id is unclassified; ask dev to run 'todo classify' first"
+            fi
         else
             die "no such todo: $id"
         fi
@@ -247,9 +295,9 @@ cmd_rm() {
         flock 9
         local t
         for f in "$TODOS" "$INBOX"; do
-            t=$(mktemp)
+            t=$(mk_store_tmp)
             jq -c --arg id "$id" 'select(.id != $id)' "$f" > "$t" 2>/dev/null || : > "$t"
-            mv "$t" "$f"
+            store_mv "$t" "$f"
         done
         commit "rm $id"
     ) 9>"$LOCK"
@@ -261,7 +309,7 @@ usage() {
 usage: todo <command> [args]
 
   add <text…>                          capture a raw todo (instant, no model)
-  classify                             drain the inbox through the classifier
+  classify                             drain the inbox through the classifier (dev only)
   list [--repo X|--type T|--all|--done]  list todos (instant; includes unclassified)
   show <id>                            print a record
   done <id> | reopen <id> | rm <id>    lifecycle
