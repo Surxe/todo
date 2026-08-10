@@ -118,6 +118,10 @@ cmd_add() {
 }
 
 cmd_classify() {
+    # Dev-only: classify runs `claude -p` and reads the dev-repo prompt/repo-list,
+    # so it is genuine dev code. Every other command operates on the group-writable
+    # shared store and is safe for ethan (see install.sh's ethan deploy).
+    [ "$(id -un)" = dev ] || die "classify is dev-only (runs claude + dev-repo code); ask dev to classify"
     ensure_store
     command -v claude >/dev/null 2>&1 || die "claude CLI not found on PATH"
 
@@ -259,9 +263,15 @@ cmd_done() {
     ensure_store
     local id="$1"
     if ! jq -e --arg id "$id" 'select(.id==$id)' "$TODOS" >/dev/null 2>&1; then
-        # Not classified yet? Drain the inbox, then it will be in todos.
+        # Not classified yet? Drain the inbox, then it will be in todos. Only dev
+        # can classify (it's dev code); a non-dev caller gets an honest error
+        # instead of a silent no-op from mutate_todos not finding the raw id.
         if jq -e --arg id "$id" 'select(.id==$id)' "$INBOX" >/dev/null 2>&1; then
-            ( cmd_classify ) >/dev/null 2>&1 || true
+            if [ "$(id -un)" = dev ]; then
+                ( cmd_classify ) >/dev/null 2>&1 || true
+            else
+                die "$id is unclassified; ask dev to run 'todo classify' first"
+            fi
         else
             die "no such todo: $id"
         fi
@@ -299,7 +309,7 @@ usage() {
 usage: todo <command> [args]
 
   add <text…>                          capture a raw todo (instant, no model)
-  classify                             drain the inbox through the classifier
+  classify                             drain the inbox through the classifier (dev only)
   list [--repo X|--type T|--all|--done]  list todos (instant; includes unclassified)
   show <id>                            print a record
   done <id> | reopen <id> | rm <id>    lifecycle
