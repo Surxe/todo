@@ -21,6 +21,11 @@ LOCK="$TODO_DIR/.lock"
 LOGDIR="$TODO_DIR/logs"
 PROMPT="$TODO_DIR/classify/system-prompt.md"
 
+# Group that must retain write access to the store. Derived from the (setgid)
+# store dir so ethan's `todo-capture` (member of that group, but not the file
+# owner) can always append to the shared inbox. See fix_perms.
+STORE_GROUP=$(stat -c %G "$TODO_DIR" 2>/dev/null || echo developers)
+
 die() { printf 'todo: %s\n' "$*" >&2; exit 1; }
 
 command -v jq  >/dev/null 2>&1 || die "jq not found on PATH"
@@ -31,26 +36,38 @@ now() { date -Iseconds; }
 ensure_store() {
     [ -d "$TODO_DIR" ] || die "TODO_DIR does not exist: $TODO_DIR"
     touch "$INBOX" "$TODOS"
+    fix_perms
+}
+
+# Keep the store group-owned + group-writable. Store rewrites go through
+# mktemp+mv (classify/mutate/rm); mktemp's temp file is 0600 dev:dev, and mv
+# makes the store inherit that private mode — silently locking ethan's
+# group-`developers` todo-capture out of the inbox (the root cause of a bumped
+# .seq with no saved record). Re-assert group+mode after every touch/rewrite so
+# capture can always append. Best-effort: read paths and non-owners just skip.
+fix_perms() {
+    chgrp "$STORE_GROUP" "$INBOX" "$TODOS" 2>/dev/null || true
+    chmod 0664 "$INBOX" "$TODOS" 2>/dev/null || true
 }
 
 count() { jq -s 'length' "$1"; }
 
-# Monotonic, never-reused ids. Backed by a tracked counter (.seq) so a removed
-# id is never handed out again; seeded from the current file max on first use.
-# Call only while holding the lock.
+# Next monotonic, never-reused id as a bare number. Seeded from the max of the
+# tracked counter (.seq) and the current file ids, so a removed id is never
+# handed out again. Pure: it does NOT persist .seq — the caller advances the
+# counter only after the record is safely written (see cmd_add), so a failed
+# append can't burn an id and lose the capture. Call only while holding the lock.
 next_id() {
-    local filemax seqval max nxt
+    local filemax seqval
     filemax=$(cat "$INBOX" "$TODOS" 2>/dev/null \
         | jq -rs 'map(.id | ltrimstr("t-") | tonumber) | (max // 0)')
     seqval=$(cat "$SEQ" 2>/dev/null || echo 0)
-    max=$(( filemax > seqval ? filemax : seqval ))
-    nxt=$(( max + 1 ))
-    printf '%s' "$nxt" > "$SEQ"
-    printf 't-%04d' "$nxt"
+    printf '%s' "$(( (filemax > seqval ? filemax : seqval) + 1 ))"
 }
 
 # Commit the store if anything changed. Local only; never pushes, never needs auth.
 commit() {
+    fix_perms
     git -C "$TODO_DIR" add -A 2>/dev/null || return 0
     git -C "$TODO_DIR" diff --cached --quiet 2>/dev/null && return 0
     git -C "$TODO_DIR" commit -q -m "$1" 2>/dev/null || true
@@ -66,14 +83,16 @@ find_record() {
 cmd_add() {
     [ "$#" -gt 0 ] || die "usage: todo add <text…>"
     ensure_store
-    local text="$*" id created rec
+    local text="$*" n id created rec
     (
         flock 9
-        id=$(next_id)
+        n=$(next_id)
+        id=$(printf 't-%04d' "$n")
         created=$(now)
         rec=$(jq -cn --arg id "$id" --arg created "$created" --arg text "$text" \
             '{id:$id, created:$created, text:$text, status:"raw"}')
-        printf '%s\n' "$rec" >> "$INBOX"
+        printf '%s\n' "$rec" >> "$INBOX"   # record lands first — never lose it
+        printf '%s' "$n" > "$SEQ"          # advance the counter only after the append succeeds
         commit "add $id"
         printf '✓ todo %s captured\n' "$id"
     ) 9>"$LOCK"
