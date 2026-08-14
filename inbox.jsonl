@@ -3,3 +3,4 @@
 {"id":"t-0036","created":"2026-08-13T23:39:10-05:00","text":"research worktree scaffolding for claude dev account","status":"raw"}
 {"id":"t-0037","created":"2026-08-13T23:52:43-05:00","text":"Surxe repo: fix gh stats and top languages links","status":"raw"}
 {"id":"t-0038","created":"2026-08-13T23:54:40-05:00","text":"claude status bar remove session's /rename and instead add back active repo worked on, can it show the active repo worked on even if claude works in repos dir instead of repos/<repo>?","status":"raw"}
+{"id":"t-0039","created":"2026-08-14T00:10:03-05:00","text":"memory: no email checked in","status":"raw"}
