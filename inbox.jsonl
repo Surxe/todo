@@ -2,3 +2,4 @@
 {"id":"t-0045","created":"2026-08-14T20:38:48-05:00","text":"test todo for testing purposes","status":"raw"}
 {"id":"t-0046","created":"2026-08-14T20:47:13-05:00","text":"fix pr-only for visualizer deployment","status":"raw"}
 {"id":"t-0047","created":"2026-08-14T20:55:40-05:00","text":"make install.sh faster for my-system","status":"raw"}
+{"id":"t-0048","created":"2026-08-14T21:21:40-05:00","text":"continue researching tmux select vs regular konsole select","status":"raw"}
