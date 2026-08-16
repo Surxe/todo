@@ -1,3 +1,2 @@
 {"id":"t-0049","created":"2026-08-14T22:25:05-05:00","text":"error if dirs dont exist","status":"raw"}
-{"id":"t-0050","created":"2026-08-15T23:27:03-05:00","text":"each steam game's launch args saved to my-system, can it get deployed to steam? make a steam specific launcher that uses the launch args as a shortcut instead of the base one","status":"raw"}
 {"id":"t-0051","created":"2026-08-16T11:11:17-05:00","text":"claude terminal becomes not clickable sometimes and interactions fail","status":"raw"}
