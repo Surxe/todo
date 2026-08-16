@@ -1,1 +1,2 @@
 {"id":"t-0052","created":"2026-08-16T17:55:33-05:00","text":"debug mode for installer that shows time taken on each step for performance improvements","status":"raw"}
+{"id":"t-0053","created":"2026-08-16T17:59:57-05:00","text":"research how to make /clear not make the new session inherit last session's name as set by /rename","status":"raw"}
