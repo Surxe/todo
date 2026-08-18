@@ -28,7 +28,7 @@ Requires `jq`, `git`, `flock` on PATH for everyone, plus the `claude` CLI for
 todo add <text…>                 # instant capture (no model, no network)
 todo classify                    # drain the inbox through the classifier
 todo list [--repo X] [--type idea|task] [--all] [--done]
-todo show <id>
+todo show <id>                   # or just `todo <id>` (bare-id shorthand)
 todo done <id>
 todo reopen <id>
 todo rm <id>

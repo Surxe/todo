@@ -311,7 +311,7 @@ usage: todo <command> [args]
   add <text…>                          capture a raw todo (instant, no model)
   classify                             drain the inbox through the classifier (dev only)
   list [--repo X|--type T|--all|--done]  list todos (instant; includes unclassified)
-  show <id>                            print a record
+  show <id>                            print a record (or just `todo <id>`)
   done <id> | reopen <id> | rm <id>    lifecycle
 EOF
 }
@@ -327,6 +327,8 @@ main() {
         reopen)   cmd_reopen "$@";;
         rm)       cmd_rm "$@";;
         ""|-h|--help|help) usage;;
+        # Bare id (e.g. `todo t-0056`) is shorthand for `todo show <id>`.
+        t-[0-9]*) cmd_show "$cmd" "$@";;
         *) die "unknown command: $cmd (try: todo help)";;
     esac
 }
