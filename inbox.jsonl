@@ -1,2 +1,3 @@
 {"id":"t-0054","created":"2026-08-17T17:58:12-05:00","text":"research if gh pages (thru a native gh repo) can support two websites at once, e.g. prod and beta","status":"raw"}
 {"id":"t-0055","created":"2026-08-17T18:00:38-05:00","text":"research hooking b2-backup into backing up /srv/dev/clips into flashdrive, maybe a separate script for the flashdrive and then create a wrapper that calls both?","status":"raw"}
+{"id":"t-0056","created":"2026-08-18T00:31:00-05:00","text":"fix clip-db not merging audio tracks and video looking incorrect","status":"raw"}
