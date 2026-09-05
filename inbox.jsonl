@@ -1,1 +1,2 @@
 {"id":"t-0094","created":"2026-09-04T20:48:04-05:00","text":"Install openssh-server on ethan-debian to diagnose the intermittent fake-resume black screen. Next time monitors show no signal after sleep, SSH in from a phone/laptop to check whether the machine is fully hung or just the Wayland display is wedged, and grab live dmesg/journal for the GPU error.","status":"raw"}
+{"id":"t-0095","created":"2026-09-05T00:25:01-05:00","text":"ensure wrf visualizer has robots.txt from the scraping button existing","status":"raw"}
