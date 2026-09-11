@@ -1,2 +1,3 @@
 {"id":"t-0096","created":"2026-09-06T17:33:27-05:00","text":"dont try to invite dev when cloning a repo that isnt mine","status":"raw"}
 {"id":"t-0097","created":"2026-09-08T18:40:25-05:00","text":"wrf-site fix overlapping shoulders on /shoulder page's graph legend","status":"raw"}
+{"id":"t-0098","created":"2026-09-10T23:34:52-05:00","text":"wire todo entries into b2-backup repo, configure at repo-level which files to backup, maybe by regex","status":"raw"}
