@@ -1,0 +1,88 @@
+{"id":"t-0001","created":"2026-08-09T13:28:07-05:00","text":"/brainstorm skill"}
+{"id":"t-0002","created":"2026-08-09T13:28:52-05:00","text":"cc alias moved to my-system"}
+{"id":"t-0003","created":"2026-08-09T13:34:12-05:00","text":"github profile readme"}
+{"id":"t-0004","created":"2026-08-09T13:49:33-05:00","text":"wrf discount visualizer print gh action's variables input for better debugging of the workflows, notably for list of items and the date range"}
+{"id":"t-0005","created":"2026-08-09T15:43:57-05:00","text":"ensure everything in my-system thats used by ethan is copied in, not referenced directly, with the exception of assets, for security reasons. known violator: dev-cc-tmux"}
+{"id":"t-0006","created":"2026-08-09T15:53:59-05:00","text":"claude code status bar that shows weekly and daily limit %"}
+{"id":"t-0007","created":"2026-08-09T15:54:49-05:00","text":"run the existing script to add master ruleset to all existing repos of mine"}
+{"id":"t-0012","created":"2026-08-09T22:45:57-05:00","text":"claude terminal layout 1x3+1, where bonus 1 is regular terminal, not claude"}
+{"id":"t-0013","created":"2026-08-09T23:12:01-05:00","text":"todo bin added for ethan, not just dev."}
+{"id":"t-0014","created":"2026-08-09T23:43:30-05:00","text":"review my-system readme"}
+{"id":"t-0015","created":"2026-08-09T23:43:56-05:00","text":"review my-system outdated dirs such as mangohud being installed. configs for these should be wired into install.sh. "}
+{"id":"t-0016","created":"2026-08-10T00:13:09-05:00","text":"change steam creds on dev account"}
+{"id":"t-0017","created":"2026-08-10T10:41:51-05:00","text":"research proxmox windows VM, SFF, BeeLink, ras PI"}
+{"id":"t-0019","created":"2026-08-10T10:43:34-05:00","text":"items that could be ran on a home server: autorun Visualizer fetch & deploy, autorun Exporter if linux support works, even without GUI?, steam-price-checker"}
+{"id":"t-0020","created":"2026-08-10T11:13:53-05:00","text":"Clipdb related tags- cage/snaketrap/trap -> correlate as garuda"}
+{"id":"t-0021","created":"2026-08-10T11:15:28-05:00","text":"OBS track merging script, windows and linux support together, 1 source of truth? copied?"}
+{"id":"t-0022","created":"2026-08-10T11:48:48-05:00","text":"rename History label in WRF discount visualizer to just GitHub"}
+{"id":"t-0023","created":"2026-08-10T11:50:55-05:00","text":"pull all deploy scripts from my-system's install.sh to installers.sh thats called by install.sh. goal is more modularity"}
+{"id":"t-0024","created":"2026-08-10T11:53:32-05:00","text":"when generating repo descriptions from gh, only poll those that have a new SHA, where to persist cache...?"}
+{"id":"t-0026","created":"2026-08-10T13:24:02-05:00","text":"dev-summary: email/smtp delivery"}
+{"id":"t-0027","created":"2026-08-10T13:24:15-05:00","text":"dev-summary: archive summaries into my-system"}
+{"id":"t-0028","created":"2026-08-10T13:24:31-05:00","text":"dev-summary: shortcut for launcher"}
+{"id":"t-0029","created":"2026-08-10T14:29:03-05:00","text":"taskbar of each monitor moved to my-system"}
+{"id":"t-0030","created":"2026-08-10T21:01:39-05:00","text":"shortcut for b2-backup"}
+{"id":"t-0031","created":"2026-08-10T21:14:59-05:00","text":"team-price-tracker auto-commit on systemctl call matching the format todo repo does. to ensure no faulty git status corrupts a change"}
+{"id":"t-0032","created":"2026-08-10T21:16:26-05:00","text":"steam-price-checker rename core dir to src and move app config to OptionsConfig orchestrated .env"}
+{"id":"t-0033","created":"2026-08-10T21:34:17-05:00","text":"confirm profile readmes work on gh site"}
+{"id":"t-0034","created":"2026-08-13T23:33:21-05:00","text":"wrf-discounts cost calc showing wekly earning estimation"}
+{"id":"t-0035","created":"2026-08-13T23:38:46-05:00","text":"discover transactions tracked & averages compiled for a rigorous version of my expenses spreadsheet"}
+{"id":"t-0036","created":"2026-08-13T23:39:10-05:00","text":"research worktree scaffolding for claude dev account"}
+{"id":"t-0037","created":"2026-08-13T23:52:43-05:00","text":"Surxe repo: fix gh stats and top languages links"}
+{"id":"t-0038","created":"2026-08-13T23:54:40-05:00","text":"claude status bar remove session's /rename and instead add back active repo worked on, can it show the active repo worked on even if claude works in repos dir instead of repos/<repo>?"}
+{"id":"t-0039","created":"2026-08-14T00:10:03-05:00","text":"memory: no email checked in"}
+{"id":"t-0040","created":"2026-08-14T00:14:05-05:00","text":"remove price archive from steam-price-tracker, its only purpose now is for email notifications on each run, historical prices not needed"}
+{"id":"t-0041","created":"2026-08-14T01:15:14-05:00","text":"Surxe-dev fix gh stat link readme"}
+{"id":"t-0042","created":"2026-08-14T01:16:14-05:00","text":"Surxe-dev github prof pic"}
+{"id":"t-0043","created":"2026-08-14T15:15:44-05:00","text":"figure out why start from shut down and login have different splash screens"}
+{"id":"t-0044","created":"2026-08-14T18:59:55-05:00","text":"Figure out why i cant copy text as easily in terminals initiated by my tmux layout. After letting go of left click while dragging, the orange text dissapears and im unable to copy. Beforehand, it would show white highlighted text and persist until changing my selection elsewhere"}
+{"id":"t-0046","created":"2026-08-14T20:47:13-05:00","text":"fix pr-only for visualizer deployment"}
+{"id":"t-0047","created":"2026-08-14T20:55:40-05:00","text":"make install.sh faster for my-system"}
+{"id":"t-0048","created":"2026-08-14T21:21:40-05:00","text":"continue researching tmux select vs regular konsole select"}
+{"id":"t-0051","created":"2026-08-16T11:11:17-05:00","text":"claude terminal becomes not clickable sometimes and interactions fail"}
+{"id":"t-0052","created":"2026-08-16T17:55:33-05:00","text":"debug mode for installer that shows time taken on each step for performance improvements"}
+{"id":"t-0053","created":"2026-08-16T17:59:57-05:00","text":"research how to make /clear not make the new session inherit last session's name as set by /rename"}
+{"id":"t-0054","created":"2026-08-17T17:58:12-05:00","text":"research if gh pages (thru a native gh repo) can support two websites at once, e.g. prod and beta"}
+{"id":"t-0055","created":"2026-08-17T18:00:38-05:00","text":"research hooking b2-backup into backing up /srv/dev/clips into flashdrive, maybe a separate script for the flashdrive and then create a wrapper that calls both?"}
+{"id":"t-0056","created":"2026-08-18T00:31:00-05:00","text":"fix clip-db not merging audio tracks and video looking incorrect"}
+{"id":"t-0057","created":"2026-08-18T18:15:11-05:00","text":"steam-price-tracker is it possible to see base price? if so, compute discount % when emails go out and display base, discounted, and discounted %."}
+{"id":"t-0058","created":"2026-08-18T18:57:42-05:00","text":"look into emulator for pokemon silver"}
+{"id":"t-0059","created":"2026-08-18T21:56:09-05:00","text":"support wrf-exporter launching wrf headless"}
+{"id":"t-0060","created":"2026-08-18T21:58:43-05:00","text":"investigate wrf-exporter latest pr test error at https://github.com/Surxe/WRFrontiers-Exporter/actions/runs/32210413654/job/95941851950?pr=25"}
+{"id":"t-0063","created":"2026-08-19T00:24:37-05:00","text":"get nemesis clip from windows again all audio tracks"}
+{"id":"t-0064","created":"2026-08-19T00:30:20-05:00","text":"install debian (or another distro?) on laptop in place of existing windows install"}
+{"id":"t-0065","created":"2026-08-19T22:19:27-05:00","text":"wrf visualizer column added for weeks since discount for all items"}
+{"id":"t-0066","created":"2026-08-20T00:22:03-05:00","text":"test and flesh out the clip db mcp query"}
+{"id":"t-0067","created":"2026-08-20T00:22:45-05:00","text":"wrf-orchestrator recreation"}
+{"id":"t-0068","created":"2026-08-20T17:43:29-05:00","text":"research valheim host"}
+{"id":"t-0069","created":"2026-08-21T20:17:39-05:00","text":"ensure dev cant write to .windows-c but can to os-shared"}
+{"id":"t-0070","created":"2026-08-21T23:13:32-05:00","text":"clip db discord hook make it copy the compressed file to clipboard when ran standalone"}
+{"id":"t-0071","created":"2026-08-22T14:51:23-05:00","text":"clip-db standalone script to post clip to a webhook, help me setup the webhook on a private server too"}
+{"id":"t-0072","created":"2026-08-22T22:32:48-05:00","text":"Automate home server deployments: ethan watcher systemd for discord webhooks in clipdb"}
+{"id":"t-0073","created":"2026-08-23T00:34:03-05:00","text":"predict next weeks discount based on 3 biggest diffs between weeks since discount and average interva~"}
+{"id":"t-0074","created":"2026-08-23T10:44:23-05:00","text":"clip-db classify and store all previously stored clips that were migrated from windows"}
+{"id":"t-0075","created":"2026-08-23T13:07:44-05:00","text":"fix '!! 'bin/todo' (/srv/dev/repos/todo) DIFFERS from approved origin/master:\ndiff --git a/bin/todo b/bin/todo\nindex 2f8d1e3..2f87c8c 100755\n--- a/bin/todo\n+++ b/bin/todo\n@@ -311,7 +311,7 @@ usage: todo <command> [args]\n   add <text…>                          capture a raw todo (instant, no model)\n   classify                             drain the inbox through the classifier (dev only)\n   list [--repo X|--type T|--all|--done]  list todos (instant; includes unclassified)\n-  show <id>                            print a record\n+  show <id>                            print a record (or just `todo <id>`)\n   done <id> | reopen <id> | rm <id>    lifecycle\n EOF\n }\n@@ -327,6 +327,8 @@ main() {\n         reopen)   cmd_reopen \"$@\";;\n         rm)       cmd_rm \"$@\";;\n         \"\"|-h|--help|help) usage;;\n+        # Bare id (e.g. `todo t-0056`) is shorthand for `todo show <id>`.\n+        t-[0-9]*) cmd_show \"$cmd\" \"$@\";;\n         *) die \"unknown command: $cmd (try: todo help)\";;\n     esac\n }\n   install this privileged file anyway? [y/N] y\n'"}
+{"id":"t-0076","created":"2026-08-23T14:35:40-05:00","text":"claude-tts filter out more commands/urls/any other blabber that listening to as audio would be miserable for"}
+{"id":"t-0077","created":"2026-08-23T16:55:08-05:00","text":"jellyfin setup and brooklyn99 pirated"}
+{"id":"t-0078","created":"2026-08-23T22:56:19-05:00","text":"wrf-visualizer predictions show accuracy for historical weeks, persisted per week"}
+{"id":"t-0079","created":"2026-08-23T23:04:02-05:00","text":"answer phamily guy, can i reduce the discount prediction % to a formula?"}
+{"id":"t-0080","created":"2026-08-26T23:38:19-05:00","text":"classify retroactive game-ending-kill tag"}
+{"id":"t-0081","created":"2026-08-27T00:09:46-05:00","text":"add pilots as tags to wrf's tag extractor in clipdb"}
+{"id":"t-0082","created":"2026-08-27T01:17:00-05:00","text":"research how clip db uses sql lite and it being gitignored"}
+{"id":"t-0083","created":"2026-08-27T21:23:13-05:00","text":"automate home server deployments: push the commits on todo"}
+{"id":"t-0084","created":"2026-08-27T22:42:33-05:00","text":"set github meta description for each repo missing one"}
+{"id":"t-0085","created":"2026-08-27T22:48:29-05:00","text":"wrf vis show prediction on each week page too"}
+{"id":"t-0086","created":"2026-08-28T14:18:54-05:00","text":"wrf site add pilot meta description and a share button on each pilot page"}
+{"id":"t-0087","created":"2026-08-28T14:23:23-05:00","text":"wrf vis change 3 of 5 top level metric on shared predictions page to 2 of 5"}
+{"id":"t-0088","created":"2026-08-29T15:39:35-05:00","text":"style guide for wrf site and wrf vis, arguably combined"}
+{"id":"t-0089","created":"2026-08-29T15:40:50-05:00","text":"polish wrf site's .claude dir, move some skills to memories and ensure callable by claude directly"}
+{"id":"t-0090","created":"2026-08-29T17:18:58-05:00","text":"concern for Surxe github account not being accredited effort on commits/prs/work in general"}
+{"id":"t-0091","created":"2026-08-29T18:12:51-05:00","text":"research if theres a quick way to see repos i have in work progress on right now that i forgot to commit/pr"}
+{"id":"t-0092","created":"2026-08-29T21:12:15-05:00","text":"backup phones mfa"}
+{"id":"t-0093","created":"2026-08-30T17:17:15-05:00","text":"WRFrontiersDB-Design deployment/propagation: design repo has no deploy of its own; consumers pin it via submodule SHA. A design change reaches the live sites only via a 3-step chain: (1) merge in WRFrontiersDB-Design, (2) bump the submodule pointer in EACH consumer (commit new gitlink) via PR, (3) redeploy consumer. Site auto-deploys on push to main (PR base is dev, so promote dev->main); visualizer deploys ONLY via manual workflow_dispatch. Fold this into the Phase 3 style docs + the design repo README. Ref: WRFrontiersDB-Site/personal/style-rework-plan.md section 7."}
+{"id":"t-0094","created":"2026-09-04T20:48:04-05:00","text":"Install openssh-server on ethan-debian to diagnose the intermittent fake-resume black screen. Next time monitors show no signal after sleep, SSH in from a phone/laptop to check whether the machine is fully hung or just the Wayland display is wedged, and grab live dmesg/journal for the GPU error."}
+{"id":"t-0095","created":"2026-09-05T00:25:01-05:00","text":"ensure wrf visualizer has robots.txt from the scraping button existing"}
+{"id":"t-0096","created":"2026-09-06T17:33:27-05:00","text":"dont try to invite dev when cloning a repo that isnt mine"}
+{"id":"t-0097","created":"2026-09-08T18:40:25-05:00","text":"wrf-site fix overlapping shoulders on /shoulder page's graph legend"}
+{"id":"t-0098","created":"2026-09-10T23:34:52-05:00","text":"wire todo entries into b2-backup repo, configure at repo-level which files to backup, maybe by regex"}
+{"id":"t-0099","created":"2026-09-11T14:44:52-05:00","text":"ssh-cc bashrc alias new feature. can we add this to my-system without leaking the ip or servers root password?"}
