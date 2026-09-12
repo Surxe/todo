@@ -82,3 +82,7 @@
 {"id":"t-0093","title":"Document WRFrontiersDB-Design deployment chain","repo":null,"type":"task","tags":["docs","deployment"],"priority":null,"dupe_of":null,"classified_at":"2026-08-30T17:17:15-05:00"}
 {"id":"t-0094","title":"Install openssh-server to diagnose fake-resume black screen","repo":"my-system","type":"task","tags":["system","debug","hardware"],"priority":null,"dupe_of":null,"classified_at":"2026-09-04T20:48:04-05:00"}
 {"id":"t-0095","title":"Ensure WRF visualizer has robots.txt file","repo":"WRFrontiers-Discount-Visualizer","type":"task","tags":["config","web"],"priority":null,"dupe_of":null,"classified_at":"2026-09-05T00:25:01-05:00"}
+{"id":"t-0096","title":"Skip inviting dev when cloning non-owned repos","repo":null,"type":"idea","tags":["workflow","git"],"priority":null,"dupe_of":null,"classified_at":"2026-09-12T15:46:08-05:00"}
+{"id":"t-0097","title":"Fix overlapping shoulders in /shoulder page graph legend","repo":"WRFrontiersDB-Site","type":"task","tags":["bug","ui"],"priority":null,"dupe_of":null,"classified_at":"2026-09-12T15:46:08-05:00"}
+{"id":"t-0098","title":"Wire todo entries into b2-backup with per-file config","repo":"b2-backup","type":"task","tags":["integration","config"],"priority":null,"dupe_of":null,"classified_at":"2026-09-12T15:46:08-05:00"}
+{"id":"t-0099","title":"Add ssh-cc bashrc alias to my-system securely","repo":"my-system","type":"idea","tags":["security","aliases"],"priority":null,"dupe_of":null,"classified_at":"2026-09-12T15:46:08-05:00"}
