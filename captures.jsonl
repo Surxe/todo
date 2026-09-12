@@ -89,3 +89,4 @@
 {"id":"t-0100","created":"2026-09-12T15:43:04-05:00","text":"cutover sync self-test (safe to ignore / will be removed)"}
 {"id":"t-0101","created":"2026-09-12T18:01:22-05:00","text":"hyperlink mods in the valheim mod set updated hook to their thunderstore page. same for the mod update(s) available to install"}
 {"id":"t-0102","created":"2026-09-12T18:03:26-05:00","text":"deepseek status bar support"}
+{"id":"t-0103","created":"2026-09-12T18:24:01-05:00","text":"config the map mod to abbreviate piles/farms/etc. for valheim server"}
