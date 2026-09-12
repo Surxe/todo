@@ -1,3 +1,7 @@
 logs/
 *.lock
 .store.*
+# Local runtime counter: only `add` (workstation) writes it, and next_id falls
+# back to the max capture id, so it is redundant with the synced store and must
+# not travel between boxes.
+.seq

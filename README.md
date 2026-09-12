@@ -26,17 +26,19 @@ Requires `jq`, `git`, `flock` on PATH for everyone, plus the `claude` CLI for
 
 ```sh
 todo add <text…>                 # instant capture (no model, no network)
-todo classify                    # drain the inbox through the classifier
+todo classify                    # classify un-classified captures (runs on the home-server when configured)
 todo list [--repo X] [--type idea|task] [--all] [--done]
 todo show <id>                   # or just `todo <id>` (bare-id shorthand)
 todo done <id>
 todo reopen <id>
 todo rm <id>
+todo sync                        # pull + push the shared git hub (best-effort)
 ```
 
-Pushing is intentionally not a command: every mutating command auto-commits
-locally, and pushes to GitHub are done manually by the owner (the repo requires
-approval to push).
+Every mutating command auto-commits locally. `todo sync` pulls then pushes the
+**cross-box hub** (`$TODO_HUB_REMOTE`, a bare repo on the home-server — see
+Cross-box). Pushes to **GitHub** remain intentionally manual by the owner (that
+remote requires approval to push); the hub is a separate remote.
 
 `todo list` is instant and read-only: it never calls the model. It shows
 unclassified captures too, with the fields classification would fill in (repo,
@@ -45,18 +47,47 @@ enrich them.
 
 ## Data model
 
-Two JSON-lines files, both tracked in git — the history is the archive.
+Three append-only JSON-lines streams, all tracked in git — the history is the
+archive. Each stream has a **single writer-box**, so two machines sharing one git
+hub never rewrite the same file and `git pull --rebase` always applies cleanly
+(no merge driver, no resolver, no host-prefixed ids):
 
-- `inbox.jsonl` — append-only raw captures: `{id, created, text, status:"raw"}`
-- `todos.jsonl` — classified records:
-  `{id, created, text, title, repo, type, tags, priority, dupe_of, status, done}`
+- `captures.jsonl` — `{id, created, text}` — written by `add` (workstation).
+- `status.jsonl` — `{id, status: open|done|removed, ts}` — written by the
+  lifecycle commands (workstation); append-only events, latest per id wins.
+- `meta.jsonl` — `{id, title, repo, type, tags, priority, dupe_of, classified_at}`
+  — written by `classify` (home-server).
 
-`id` is a zero-padded sequential `t-NNNN`. Every mutating command auto-commits
-locally; pushing is done manually by the owner.
+Two orthogonal axes replace the old coupled status: **classification-state** is
+*derived* (an id is classified iff a `meta.jsonl` record exists — classify only
+ever appends, never drains or edits), and **completion-status** (`open`/`done`/
+`removed`) is its own event stream. `rm` is a `removed` tombstone, not a delete.
+`list`/`show` fold the three streams by id at read time.
+
+`id` is a zero-padded sequential `t-NNNN`, minted only by `add` (so a single
+writer-box mints ids — no collisions). `next_id` derives from the max capture id
+(the local `.seq` is a gitignored cache, never synced).
+
+> Migrating an older two-file store (`inbox.jsonl` + `todos.jsonl`)? Run
+> `scripts/migrate-streams.sh` once — it splits the legacy records into the three
+> streams, preserving every id's text, classification, and done-state.
+
+## Cross-box (workstation + home-server)
+
+The store is shared between the workstation and the headless home-server via a
+**bare git repo on the home-server** (the source of truth; the `hub` remote on
+each clone). Captures/status originate on the workstation and are published to the
+hub; **classification runs exclusively on the home-server** (a daily timer), so
+`classify` on the workstation becomes a remote trigger: it pushes, runs `classify`
+on the server over SSH (`$TODO_CLASSIFY_REMOTE`), then pulls the enriched meta
+back. All sync is best-effort — an unreachable hub leaves the local commit intact
+and warns, so capture never blocks when off-network. See the my-system and
+home-server repos for the deploy wiring (SSH key, push-on-add trigger, timer).
 
 ## Classification
 
-`todo classify` batches all pending inbox items into a single headless call:
+`todo classify` batches all un-classified captures (those with no `meta.jsonl`
+record, excluding tombstoned ones) into a single headless call:
 
 ```
 claude -p --model haiku --output-format json --disallowed-tools '*' \
@@ -65,9 +96,11 @@ claude -p --model haiku --output-format json --disallowed-tools '*' \
 
 The payload is the batch plus the repo list from
 `my-system/users/dev/sections/repo-descriptions.md` (override with
-`$TODO_REPOLIST`) — the model's only context. It never asks questions; it
-defaults every field when unsure (see `classify/system-prompt.md`). Raw input
-and output of each call are logged to `logs/` (gitignored) for prompt tuning.
+`$TODO_REPOLIST` — the home-server sets this to its own repo list) — the model's
+only context. It never asks questions; it defaults every field when unsure (see
+`classify/system-prompt.md`). Classify only **appends** to `meta.jsonl`; it never
+touches captures or status. Raw input and output of each call are logged to
+`logs/` (gitignored) for prompt tuning.
 
 ## Desktop capture (ethan)
 
@@ -89,3 +122,7 @@ Meta+T for the dialog, Meta+Shift+T for the clipboard.
 | `TODO_MODEL`          | `haiku` |
 | `TODO_FALLBACK_MODEL` | (none) — if set, use a Sonnet-4-or-lower id, never the `sonnet` alias |
 | `TODO_REPOLIST`       | `/srv/dev/repos/my-system/users/dev/sections/repo-descriptions.md` |
+| `TODO_HUB_REMOTE`     | `hub` — git remote name for the shared bare repo (`todo sync`) |
+| `TODO_CLASSIFY_REMOTE`| (none) — if set (e.g. `dev@home-server`), `classify` runs there over SSH instead of locally |
+| `TODO_REMOTE_CLASSIFY_CMD` | `todo classify` — the command run over SSH on the classify remote |
+| `TODO_SSH_OPTS`       | `-o ConnectTimeout=8 -o BatchMode=yes` — keeps sync non-blocking / non-interactive |

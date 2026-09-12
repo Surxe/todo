@@ -1,12 +1,27 @@
 #!/usr/bin/env bash
 #
-# todo - central, data-oriented dev-idea capture.
+# todo - central, data-oriented dev-idea capture (cross-box).
 #
 #   Capture is instant and dumb (append raw text, no model, no network).
 #   Classification is deferred and batched via a headless `claude -p` call,
 #   so its reasoning never enters the session you captured from.
 #
-# See README.md for the data model and design.
+# The store is THREE append-only JSONL streams, each written by a single
+# writer-box, so two machines sharing one git hub never rewrite the same file
+# and `git pull --rebase` always applies cleanly (no merge driver needed):
+#
+#   captures.jsonl  {id, created, text}                         <- `add`  (workstation)
+#   status.jsonl    {id, status: open|done|removed, ts}         <- lifecycle (workstation)
+#   meta.jsonl      {id, title, repo, type, tags, priority,     <- `classify` (home-server)
+#                    dupe_of, classified_at}
+#
+# Two orthogonal axes replace the old coupled status field:
+#   - classification-state is DERIVED: an id is "classified" iff a meta record
+#     exists for it (classify only ever APPENDS meta; it never drains or edits).
+#   - completion-status (open/done/removed) is its own append-only event stream;
+#     the latest event per id wins. `rm` is a "removed" tombstone, not a delete.
+#
+# `list`/`show` FOLD the three streams by id at read time. See README.md.
 set -euo pipefail
 
 TODO_DIR="${TODO_DIR:-/srv/dev/repos/todo}"
@@ -14,72 +29,65 @@ TODO_MODEL="${TODO_MODEL:-haiku}"
 TODO_FALLBACK_MODEL="${TODO_FALLBACK_MODEL:-}"   # empty = none; if set, use a Sonnet-4-or-lower id, NOT the `sonnet` alias
 TODO_REPOLIST="${TODO_REPOLIST:-/srv/dev/repos/my-system/users/dev/sections/repo-descriptions.md}"
 
-INBOX="$TODO_DIR/inbox.jsonl"
-TODOS="$TODO_DIR/todos.jsonl"
+# --- cross-box sync config (all optional; unset = single-box, classify locally) ---
+TODO_HUB_REMOTE="${TODO_HUB_REMOTE:-hub}"          # git remote name for the shared bare repo
+TODO_CLASSIFY_REMOTE="${TODO_CLASSIFY_REMOTE:-}"   # e.g. dev@home-server; set => classify runs THERE
+TODO_REMOTE_CLASSIFY_CMD="${TODO_REMOTE_CLASSIFY_CMD:-todo classify}"  # command run over ssh on the remote
+TODO_SSH_OPTS="${TODO_SSH_OPTS:--o ConnectTimeout=8 -o BatchMode=yes}"  # keep sync non-blocking / non-interactive
+
+CAPTURES="$TODO_DIR/captures.jsonl"
+STATUS="$TODO_DIR/status.jsonl"
+META="$TODO_DIR/meta.jsonl"
 SEQ="$TODO_DIR/.seq"
 LOCK="$TODO_DIR/.lock"
 LOGDIR="$TODO_DIR/logs"
 PROMPT="$TODO_DIR/classify/system-prompt.md"
 
+# Legacy (pre-stream) store files, kept only to detect an un-migrated store.
+OLD_INBOX="$TODO_DIR/inbox.jsonl"
+OLD_TODOS="$TODO_DIR/todos.jsonl"
+
 # Group that must retain write access to the store. Derived from the (setgid)
 # store dir so ethan's `todo-capture` (member of that group, but not the file
-# owner) can always append to the shared inbox. See fix_perms.
+# owner) can always append to the shared streams. See fix_perms.
 STORE_GROUP=$(stat -c %G "$TODO_DIR" 2>/dev/null || echo developers)
 
 die() { printf 'todo: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'todo: %s\n' "$*" >&2; }
 
 command -v jq  >/dev/null 2>&1 || die "jq not found on PATH"
 
 now() { date -Iseconds; }
 
-# Ensure store files exist (a fresh clone or a bad TODO_DIR shouldn't crash add).
+# Ensure the stream files exist (a fresh clone or a bad TODO_DIR shouldn't crash
+# a command). Warns once if an un-migrated legacy store is detected.
 ensure_store() {
     [ -d "$TODO_DIR" ] || die "TODO_DIR does not exist: $TODO_DIR"
-    touch "$INBOX" "$TODOS"
+    if { [ -s "$OLD_INBOX" ] || [ -s "$OLD_TODOS" ]; } && [ ! -s "$CAPTURES" ]; then
+        warn "legacy store detected (inbox.jsonl/todos.jsonl) but no captures.jsonl."
+        warn "run scripts/migrate-streams.sh once to convert to the stream model."
+    fi
+    touch "$CAPTURES" "$STATUS" "$META"
     fix_perms
 }
 
-# Keep the store group-owned + group-writable. Store rewrites go through
-# mktemp+mv (classify/mutate/rm). Historically mktemp put the temp in /tmp as
-# 0600 dev:dev and the mv made the store inherit that private mode — silently
-# locking ethan's group-`developers` todo-capture out of the inbox (the root
-# cause of a bumped .seq with no saved record). Rewrites now go through
-# store_mv, which asserts the shared group+mode BEFORE the swap so the store is
-# never even transiently private; fix_perms remains a backstop, re-asserting
-# group+mode after every touch. Best-effort: read paths and non-owners skip.
+# Keep the streams group-owned + group-writable so ethan's group-`developers`
+# todo-capture can always append. Appends go straight through `>>`, so unlike the
+# old rewrite path there is no transient-private-mode window; fix_perms is a
+# best-effort backstop (read paths and non-owners just skip).
 fix_perms() {
-    chgrp "$STORE_GROUP" "$INBOX" "$TODOS" 2>/dev/null || true
-    chmod 0664 "$INBOX" "$TODOS" 2>/dev/null || true
+    chgrp "$STORE_GROUP" "$CAPTURES" "$STATUS" "$META" 2>/dev/null || true
+    chmod 0664 "$CAPTURES" "$STATUS" "$META" 2>/dev/null || true
 }
-
-# Create a rewrite temp INSIDE the setgid store dir, so it inherits the store's
-# group (`developers`) instead of the caller's private primary group. Callers
-# write their new content into this path, then hand it to store_mv.
-mk_store_tmp() { mktemp "$TODO_DIR/.store.XXXXXX"; }
-
-# Atomically replace a store file with a freshly-written temp, asserting the
-# shared group+0664 mode BEFORE the mv. This closes the window an interrupted
-# rewrite used to leave behind: a store file stranded 0600 dev:dev, unreadable
-# to ethan's group-`developers` reader/capture. Best-effort perms (|| true) so
-# non-owner rewrites still complete; pair with mk_store_tmp.
-store_mv() {
-    local tmp="$1" dest="$2"
-    chgrp "$STORE_GROUP" "$tmp" 2>/dev/null || true
-    chmod 0664 "$tmp" 2>/dev/null || true
-    mv "$tmp" "$dest"
-}
-
-count() { jq -s 'length' "$1"; }
 
 # Next monotonic, never-reused id as a bare number. Seeded from the max of the
-# tracked counter (.seq) and the current file ids, so a removed id is never
-# handed out again. Pure: it does NOT persist .seq — the caller advances the
-# counter only after the record is safely written (see cmd_add), so a failed
-# append can't burn an id and lose the capture. Call only while holding the lock.
+# tracked counter (.seq) and the capture-stream ids, so a removed id is never
+# handed out again (removal is a tombstone, the capture stays). Pure: it does NOT
+# persist .seq — the caller advances the counter only after the record is safely
+# written (see cmd_add). Call only while holding the lock.
 next_id() {
     local filemax seqval
-    filemax=$(cat "$INBOX" "$TODOS" 2>/dev/null \
-        | jq -rs 'map(.id | ltrimstr("t-") | tonumber) | (max // 0)')
+    filemax=$(jq -rs 'map(.id | ltrimstr("t-") | tonumber) | (max // 0)' "$CAPTURES" 2>/dev/null || echo 0)
     seqval=$(cat "$SEQ" 2>/dev/null || echo 0)
     printf '%s' "$(( (filemax > seqval ? filemax : seqval) + 1 ))"
 }
@@ -92,9 +100,47 @@ commit() {
     git -C "$TODO_DIR" commit -q -m "$1" 2>/dev/null || true
 }
 
-# Find a record by id in todos then inbox; prints the JSON object or nothing.
-find_record() {
-    jq -c --arg id "$1" 'select(.id==$id)' "$TODOS" "$INBOX" 2>/dev/null | head -n1
+# Append one status event (open|done|removed) for an id. Call under the lock.
+append_status() {
+    local id="$1" st="$2" ts rec
+    ts=$(now)
+    rec=$(jq -cn --arg id "$id" --arg status "$st" --arg ts "$ts" \
+        '{id:$id, status:$status, ts:$ts}')
+    printf '%s\n' "$rec" >> "$STATUS"
+}
+
+# True if a capture exists for the id.
+capture_exists() { jq -e --arg id "$1" 'select(.id==$id)' "$CAPTURES" >/dev/null 2>&1; }
+
+# Fold the three streams into the current view: one object per capture, enriched
+# with the latest meta (if any) and the latest status event (default "open"),
+# with "removed" items filtered out. Emits a JSON array on stdout.
+fold() {
+    jq -n \
+        --slurpfile caps  "$CAPTURES" \
+        --slurpfile metas "$META" \
+        --slurpfile stats "$STATUS" '
+        ( ($metas | group_by(.id) | map({key:.[0].id, value:(max_by(.classified_at))}) | from_entries) ) as $M
+        | ( ($stats | group_by(.id) | map({key:.[0].id, value:(max_by(.ts))}) | from_entries) ) as $S
+        | $caps
+        | map(
+            . as $c
+            | ($M[$c.id]) as $m
+            | ($S[$c.id]) as $s
+            | {
+                id: $c.id, created: $c.created, text: $c.text,
+                classified: ($m != null),
+                title:    ($m.title // $c.text),
+                repo:     ($m.repo // null),
+                type:     ($m.type // null),
+                tags:     ($m.tags // []),
+                priority: ($m.priority // null),
+                dupe_of:  ($m.dupe_of // null),
+                status:   (($s.status) // "open"),
+                done:     (if ($s.status // "open") == "done" then $s.ts else null end)
+              }
+          )
+        | map(select(.status != "removed"))'
 }
 
 # ---------------------------------------------------------------------------
@@ -109,9 +155,9 @@ cmd_add() {
         id=$(printf 't-%04d' "$n")
         created=$(now)
         rec=$(jq -cn --arg id "$id" --arg created "$created" --arg text "$text" \
-            '{id:$id, created:$created, text:$text, status:"raw"}')
-        printf '%s\n' "$rec" >> "$INBOX"   # record lands first — never lose it
-        printf '%s' "$n" > "$SEQ"          # advance the counter only after the append succeeds
+            '{id:$id, created:$created, text:$text}')
+        printf '%s\n' "$rec" >> "$CAPTURES"   # record lands first — never lose it
+        printf '%s' "$n" > "$SEQ"             # advance the counter only after the append succeeds
         commit "add $id"
         printf '✓ todo %s captured\n' "$id"
     ) 9>"$LOCK"
@@ -123,13 +169,38 @@ cmd_classify() {
     # shared store and is safe for ethan (see install.sh's ethan deploy).
     [ "$(id -un)" = dev ] || die "classify is dev-only (runs claude + dev-repo code); ask dev to classify"
     ensure_store
+
+    # Cross-box: when a classify remote is configured, classification happens THERE
+    # (the home-server), not here. Publish local captures/status, trigger a remote
+    # classify, then pull the enriched meta back. Best-effort and non-blocking.
+    if [ -n "$TODO_CLASSIFY_REMOTE" ]; then
+        sync_push
+        if ! ssh $TODO_SSH_OPTS "$TODO_CLASSIFY_REMOTE" "$TODO_REMOTE_CLASSIFY_CMD"; then
+            warn "remote classify on '$TODO_CLASSIFY_REMOTE' failed/unreachable; try again later"
+        fi
+        sync_pull
+        return 0
+    fi
+
     command -v claude >/dev/null 2>&1 || die "claude CLI not found on PATH"
 
-    # Snapshot the inbox under lock, then release it so `add` never blocks on the
-    # (slow) model call.
+    # Snapshot the un-classified captures (capture ids with no meta record) under
+    # lock, then release it so `add` never blocks on the (slow) model call.
     local snapshot
     snapshot=$(mktemp)
-    ( flock 9; cp "$INBOX" "$snapshot"; ) 9>"$LOCK"
+    (
+        flock 9
+        jq -n --slurpfile caps "$CAPTURES" --slurpfile metas "$META" --slurpfile stats "$STATUS" '
+            ($metas | map(.id) | unique) as $done
+            | ($stats | group_by(.id) | map({key:.[0].id, value:(max_by(.ts).status)}) | from_entries) as $S
+            | $caps
+            | map(select(
+                ((.id) as $i | ($done | index($i)) | not)     # no meta record yet
+                and (($S[.id] // "open") != "removed")          # and not tombstoned
+              ))
+            | .[]' \
+            > "$snapshot"
+    ) 9>"$LOCK"
 
     local n
     n=$(count "$snapshot")
@@ -150,7 +221,7 @@ cmd_classify() {
         --output-format json \
         --disallowed-tools Bash Edit Write Read Glob Grep WebFetch WebSearch Task \
         --append-system-prompt "$sysprompt" \
-        "$payload" 2>&1) || { log_fail "$snapshot" "$payload" "$raw"; die "classifier call failed (see logs/)"; }
+        "$payload" </dev/null 2>&1) || { log_fail "$snapshot" "$payload" "$raw"; die "classifier call failed (see logs/)"; }
 
     result=$(jq -r '.result // empty' <<<"$raw" 2>/dev/null || true)
     # Strip a leading/trailing ``` fence if the model added one.
@@ -158,34 +229,29 @@ cmd_classify() {
 
     if ! jq -e 'type=="array"' >/dev/null 2>&1 <<<"$clean"; then
         log_fail "$snapshot" "$payload" "$raw"
-        die "classifier returned unparseable output (items left in inbox; see logs/)"
+        die "classifier returned unparseable output (captures left un-classified; see logs/)"
     fi
 
-    # Merge enrichment onto the raw records, applying defaults for anything the
-    # model omitted or left unsure.
-    local merged
-    merged=$(jq -s --slurpfile e <(printf '%s' "$clean") '
+    # Build one meta record per classified id, applying defaults for anything the
+    # model omitted. Meta is append-only — we never touch captures or status here.
+    local classified_at merged
+    classified_at=$(now)
+    merged=$(jq -s --slurpfile e <(printf '%s' "$clean") --arg ts "$classified_at" '
         ($e[0]) as $enr
         | [ .[] as $r
             | ([ $enr[] | select(.id == $r.id) ][0]) as $x
-            | { id: $r.id, created: $r.created, text: $r.text,
+            | { id: $r.id,
                 title:    ($x.title // $r.text),
                 repo:     ($x.repo // null),
                 type:     ($x.type // "idea"),
                 tags:     ($x.tags // []),
                 priority: ($x.priority // null),
                 dupe_of:  ($x.dupe_of // null),
-                status: "open", done: null } ]' "$snapshot")
-
-    local ids
-    ids=$(jq -c '[.[].id]' <<<"$items")
+                classified_at: $ts } ]' "$snapshot")
 
     (
         flock 9
-        jq -c '.[]' <<<"$merged" >> "$TODOS"
-        local tmp; tmp=$(mk_store_tmp)
-        jq -c --argjson ids "$ids" 'select([.id] | inside($ids) | not)' "$INBOX" > "$tmp" 2>/dev/null || : > "$tmp"
-        store_mv "$tmp" "$INBOX"
+        jq -c '.[]' <<<"$merged" >> "$META"
         commit "classify $n"
     ) 9>"$LOCK"
 
@@ -193,6 +259,8 @@ cmd_classify() {
     rm -f "$snapshot"
     echo "classified $n"
 }
+
+count() { jq -s 'length' "$1"; }
 
 log_ok()   { mkdir -p "$LOGDIR"; jq -n --arg in "$1" --arg out "$2" --arg ts "$(now)" \
                 '{ts:$ts, ok:true, input:$in, output:$out}' > "$LOGDIR/classify-$(date +%Y%m%d-%H%M%S).json"; }
@@ -212,96 +280,90 @@ cmd_list() {
         esac
     done
 
-    # Instant and read-only: never classifies, never touches the model. Reads
-    # classified todos AND raw inbox captures, normalizing both to one shape so
-    # freshly-added items show up immediately (with placeholders for the fields
-    # classification would fill in). Run `todo classify` to enrich them.
+    # Instant and read-only: never classifies, never touches the model. Folds the
+    # three streams; un-classified captures show with placeholders (type "raw",
+    # repo/tags "-"). Run `todo classify` to enrich them.
     { printf 'ID\tREPO\tTYPE\tTAGS\tTITLE\n'
-      jq -r --arg repo "$repo" --arg type "$type" --arg scope "$scope" '
-        ( if .status == "raw" then
-            { id, repo: "-", type: "raw", tags: "-", title: .text, status: "raw" }
-          else
-            { id,
-              repo:  (.repo // "-"),
-              type:  .type,
-              tags:  ((.tags // []) | join(",") | if . == "" then "-" else . end),
-              title: .title,
-              status: .status }
-          end ) as $n
+      fold | jq -r --arg repo "$repo" --arg type "$type" --arg scope "$scope" '
+        .[]
+        | (if .classified then .type else "raw" end) as $typ
+        | (if .classified then ((.tags // []) | join(",") | if . == "" then "-" else . end) else "-" end) as $tags
+        | (.repo // "-") as $repo_s
         | select(
             ($scope == "all")
-            or ($scope == "open" and ($n.status == "open" or $n.status == "raw"))
-            or ($scope == $n.status)
+            or ($scope == "open"  and .status == "open")
+            or ($scope == "done"  and .status == "done")
           )
-        | select( ($repo == "") or ($n.repo == $repo) )
-        | select( ($type == "") or ($n.type == $type) )
-        | [ $n.id, $n.repo, $n.type, $n.tags, $n.title ] | @tsv' "$TODOS" "$INBOX"
+        | select( ($repo == "") or ($repo_s == $repo) )
+        | select( ($type == "") or ($typ == $type) )
+        | [ .id, $repo_s, $typ, $tags, .title ] | @tsv'
     } | column -t -s $'\t'
 }
 
 cmd_show() {
     [ "$#" -eq 1 ] || die "usage: todo show <id>"
-    local r; r=$(find_record "$1")
+    ensure_store
+    local r; r=$(fold | jq -c --arg id "$1" '.[] | select(.id==$id)')
     [ -n "$r" ] || die "no such todo: $1"
     jq . <<<"$r"
-}
-
-# Rewrite todos.jsonl through a jq program, under lock, then commit.
-mutate_todos() {
-    local prog="$1" msg="$2" tmp
-    (
-        flock 9
-        tmp=$(mk_store_tmp)
-        jq -c "$prog" "$TODOS" > "$tmp"
-        store_mv "$tmp" "$TODOS"
-        commit "$msg"
-    ) 9>"$LOCK"
 }
 
 cmd_done() {
     [ "$#" -eq 1 ] || die "usage: todo done <id>"
     ensure_store
     local id="$1"
-    if ! jq -e --arg id "$id" 'select(.id==$id)' "$TODOS" >/dev/null 2>&1; then
-        # Not classified yet? Drain the inbox, then it will be in todos. Only dev
-        # can classify (it's dev code); a non-dev caller gets an honest error
-        # instead of a silent no-op from mutate_todos not finding the raw id.
-        if jq -e --arg id "$id" 'select(.id==$id)' "$INBOX" >/dev/null 2>&1; then
-            if [ "$(id -un)" = dev ]; then
-                ( cmd_classify ) >/dev/null 2>&1 || true
-            else
-                die "$id is unclassified; ask dev to run 'todo classify' first"
-            fi
-        else
-            die "no such todo: $id"
-        fi
-    fi
-    mutate_todos "if .id==\"$id\" then .status=\"done\" | .done=\"$(now)\" else . end" "done $id"
+    capture_exists "$id" || die "no such todo: $id"
+    ( flock 9; append_status "$id" done; commit "done $id"; ) 9>"$LOCK"
     echo "done $id"
 }
 
 cmd_reopen() {
     [ "$#" -eq 1 ] || die "usage: todo reopen <id>"
     ensure_store
-    mutate_todos "if .id==\"$1\" then .status=\"open\" | .done=null else . end" "reopen $1"
-    echo "reopened $1"
+    local id="$1"
+    capture_exists "$id" || die "no such todo: $id"
+    ( flock 9; append_status "$id" open; commit "reopen $id"; ) 9>"$LOCK"
+    echo "reopened $id"
 }
 
 cmd_rm() {
     [ "$#" -eq 1 ] || die "usage: todo rm <id>"
     ensure_store
     local id="$1"
+    capture_exists "$id" || die "no such todo: $id"
+    ( flock 9; append_status "$id" removed; commit "rm $id"; ) 9>"$LOCK"
+    echo "removed $id"
+}
+
+# --- cross-box sync over the git hub (best-effort; never blocks capture) -------
+#
+# sync_pull rebases local commits onto the hub's (it touches the working tree, so
+# it holds the store lock); sync_push publishes local commits. Both degrade to a
+# warning + success when the hub is unreachable (e.g. off-network), so a later
+# `todo sync` reconciles. The streams are disjoint single-writer files, so a
+# rebase never hits a content conflict.
+sync_pull() {
+    local branch
+    branch=$(git -C "$TODO_DIR" symbolic-ref --short -q HEAD 2>/dev/null || echo master)
     (
         flock 9
-        local t
-        for f in "$TODOS" "$INBOX"; do
-            t=$(mk_store_tmp)
-            jq -c --arg id "$id" 'select(.id != $id)' "$f" > "$t" 2>/dev/null || : > "$t"
-            store_mv "$t" "$f"
-        done
-        commit "rm $id"
+        if ! git -C "$TODO_DIR" pull --rebase --quiet "$TODO_HUB_REMOTE" "$branch" 2>/dev/null; then
+            git -C "$TODO_DIR" rebase --abort 2>/dev/null || true
+            warn "sync: pull from '$TODO_HUB_REMOTE' failed/unreachable (kept local state)"
+            return 0
+        fi
     ) 9>"$LOCK"
-    echo "removed $id"
+}
+
+sync_push() {
+    git -C "$TODO_DIR" push --quiet "$TODO_HUB_REMOTE" 2>/dev/null \
+        || warn "sync: push to '$TODO_HUB_REMOTE' failed/unreachable (will retry next sync)"
+}
+
+cmd_sync() {
+    ensure_store
+    sync_pull
+    sync_push
 }
 
 usage() {
@@ -309,10 +371,12 @@ usage() {
 usage: todo <command> [args]
 
   add <text…>                          capture a raw todo (instant, no model)
-  classify                             drain the inbox through the classifier (dev only)
+  classify                             classify un-classified captures (dev only;
+                                       runs on the home-server when configured)
   list [--repo X|--type T|--all|--done]  list todos (instant; includes unclassified)
   show <id>                            print a record (or just `todo <id>`)
-  done <id> | reopen <id> | rm <id>    lifecycle
+  done <id> | reopen <id> | rm <id>    lifecycle (append-only status events)
+  sync                                 pull + push the shared git hub (best-effort)
 EOF
 }
 
@@ -326,6 +390,7 @@ main() {
         done)     cmd_done "$@";;
         reopen)   cmd_reopen "$@";;
         rm)       cmd_rm "$@";;
+        sync)     cmd_sync "$@";;
         ""|-h|--help|help) usage;;
         # Bare id (e.g. `todo t-0056`) is shorthand for `todo show <id>`.
         t-[0-9]*) cmd_show "$cmd" "$@";;
