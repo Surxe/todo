@@ -90,3 +90,8 @@
 {"id":"t-0102","title":"Add DeepSeek status bar support","repo":"my-system","type":"task","tags":["deepseek","status-bar"],"priority":null,"dupe_of":null,"classified_at":"2026-09-12T21:09:41-05:00"}
 {"id":"t-0103","title":"Abbreviate location labels in Valheim server map mod config","repo":null,"type":"task","tags":["valheim","config","map"],"priority":null,"dupe_of":null,"classified_at":"2026-09-12T21:09:41-05:00"}
 {"id":"t-0104","title":"Disable yellow mushroom autopin in Valheim server map mod","repo":null,"type":"task","tags":["valheim","config","map"],"priority":null,"dupe_of":null,"classified_at":"2026-09-12T21:09:41-05:00"}
+{"id":"t-0105","title":"Improve LLM's direct detection of active hostname","repo":"home-server","type":"task","tags":["hostname","detection"],"priority":null,"dupe_of":null,"classified_at":"2026-09-13T13:01:37-05:00"}
+{"id":"t-0106","title":"Enable achievements override on Valheim server","repo":"home-server","type":"task","tags":["valheim","config"],"priority":null,"dupe_of":null,"classified_at":"2026-09-13T13:01:37-05:00"}
+{"id":"t-0107","title":"Update GitHub readmes with new dev-env repo docs","repo":null,"type":"task","tags":["docs"],"priority":null,"dupe_of":null,"classified_at":"2026-09-13T13:01:37-05:00"}
+{"id":"t-0108","title":"Standardize weapon falloff range in WRF visualizer","repo":null,"type":"task","tags":["wrf","visualization"],"priority":null,"dupe_of":null,"classified_at":"2026-09-13T13:01:37-05:00"}
+{"id":"t-0109","title":"Learn Python frontend with Go","repo":null,"type":"idea","tags":["learning"],"priority":null,"dupe_of":null,"classified_at":"2026-09-13T13:01:37-05:00"}
