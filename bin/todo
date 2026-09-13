@@ -366,7 +366,13 @@ sync_pull() {
 }
 
 sync_push() {
-    git -C "$TODO_STORE_DIR" push --quiet "$TODO_HUB_REMOTE" 2>/dev/null \
+    # Push the current branch by explicit refspec (like sync_pull/read_refresh), so
+    # it works on any clone regardless of whether an upstream is configured. A bare
+    # `git push` relies on branch.<name>.merge and fails ("no upstream") on a clone
+    # made with `git init` + `remote add` rather than `git clone` — see README setup.
+    local branch
+    branch=$(git -C "$TODO_STORE_DIR" symbolic-ref --short -q HEAD 2>/dev/null || echo master)
+    git -C "$TODO_STORE_DIR" push --quiet "$TODO_HUB_REMOTE" "$branch" 2>/dev/null \
         || warn "sync: push to '$TODO_HUB_REMOTE' failed/unreachable (will retry next sync)"
 }
 
