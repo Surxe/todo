@@ -90,3 +90,4 @@
 {"id":"t-0101","created":"2026-09-12T18:01:22-05:00","text":"hyperlink mods in the valheim mod set updated hook to their thunderstore page. same for the mod update(s) available to install"}
 {"id":"t-0102","created":"2026-09-12T18:03:26-05:00","text":"deepseek status bar support"}
 {"id":"t-0103","created":"2026-09-12T18:24:01-05:00","text":"config the map mod to abbreviate piles/farms/etc. for valheim server"}
+{"id":"t-0104","created":"2026-09-12T19:02:02-05:00","text":"disable yellow mushroom from autopin in valheim server map mod config"}
