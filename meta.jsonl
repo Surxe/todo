@@ -86,3 +86,7 @@
 {"id":"t-0097","title":"Fix overlapping shoulders in /shoulder page graph legend","repo":"WRFrontiersDB-Site","type":"task","tags":["bug","ui"],"priority":null,"dupe_of":null,"classified_at":"2026-09-12T15:46:08-05:00"}
 {"id":"t-0098","title":"Wire todo entries into b2-backup with per-file config","repo":"b2-backup","type":"task","tags":["integration","config"],"priority":null,"dupe_of":null,"classified_at":"2026-09-12T15:46:08-05:00"}
 {"id":"t-0099","title":"Add ssh-cc bashrc alias to my-system securely","repo":"my-system","type":"idea","tags":["security","aliases"],"priority":null,"dupe_of":null,"classified_at":"2026-09-12T15:46:08-05:00"}
+{"id":"t-0101","title":"Hyperlink mods in update notifications to their Thunderstore pages","repo":null,"type":"task","tags":["valheim","mod"],"priority":null,"dupe_of":null,"classified_at":"2026-09-12T21:09:41-05:00"}
+{"id":"t-0102","title":"Add DeepSeek status bar support","repo":"my-system","type":"task","tags":["deepseek","status-bar"],"priority":null,"dupe_of":null,"classified_at":"2026-09-12T21:09:41-05:00"}
+{"id":"t-0103","title":"Abbreviate location labels in Valheim server map mod config","repo":null,"type":"task","tags":["valheim","config","map"],"priority":null,"dupe_of":null,"classified_at":"2026-09-12T21:09:41-05:00"}
+{"id":"t-0104","title":"Disable yellow mushroom autopin in Valheim server map mod","repo":null,"type":"task","tags":["valheim","config","map"],"priority":null,"dupe_of":null,"classified_at":"2026-09-12T21:09:41-05:00"}
