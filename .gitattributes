@@ -1,0 +1,6 @@
+# status.jsonl is an append-only, latest-event-per-id log that BOTH boxes may now
+# append to (mark done/reopen/rm on either machine). A plain rebase treats two
+# tail-appends as a conflict; the `union` driver instead keeps both sides' added
+# lines, and `fold` already resolves per id by max ts, so duplicate/unordered
+# lines are harmless. This is what keeps cross-box status sync conflict-free.
+status.jsonl merge=union
