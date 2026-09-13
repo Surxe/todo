@@ -279,6 +279,7 @@ cmd_list() {
             *) die "unknown flag: $1";;
         esac
     done
+    read_refresh   # reflect the other box's latest before rendering
 
     # Instant and read-only: never classifies, never touches the model. Folds the
     # three streams; un-classified captures show with placeholders (type "raw",
@@ -303,6 +304,7 @@ cmd_list() {
 cmd_show() {
     [ "$#" -eq 1 ] || die "usage: todo show <id>"
     ensure_store
+    read_refresh   # reflect the other box's latest before rendering
     local r; r=$(fold | jq -c --arg id "$1" '.[] | select(.id==$id)')
     [ -n "$r" ] || die "no such todo: $1"
     jq . <<<"$r"
@@ -340,8 +342,8 @@ cmd_rm() {
 # sync_pull rebases local commits onto the hub's (it touches the working tree, so
 # it holds the store lock); sync_push publishes local commits. Both degrade to a
 # warning + success when the hub is unreachable (e.g. off-network), so a later
-# `todo sync` reconciles. The streams are disjoint single-writer files, so a
-# rebase never hits a content conflict.
+# `todo sync` reconciles. captures/meta are single-writer, and status.jsonl is
+# declared `merge=union` (.gitattributes), so a rebase never hits a content conflict.
 sync_pull() {
     local branch
     branch=$(git -C "$TODO_DIR" symbolic-ref --short -q HEAD 2>/dev/null || echo master)
@@ -358,6 +360,31 @@ sync_pull() {
 sync_push() {
     git -C "$TODO_DIR" push --quiet "$TODO_HUB_REMOTE" 2>/dev/null \
         || warn "sync: push to '$TODO_HUB_REMOTE' failed/unreachable (will retry next sync)"
+}
+
+# read_refresh: before a READ (list/show), best-effort pull the hub so it reflects
+# changes made on the other box (fresh classify meta, or a `done` marked on the
+# server) the moment you look — the workstation always reaches the hub, so this needs
+# no reverse-ssh, no polling, and no timer. The fetch is read-only (no working-tree
+# touch, no lock) and bounded via TODO_SSH_OPTS, so an unreachable hub is skipped
+# quickly and the local state is shown; we take the lock and rebase ONLY when the hub
+# is actually ahead. status.jsonl's union merge keeps that rebase conflict-free.
+# Set TODO_NO_SYNC=1 to skip (offline/batch/tests).
+read_refresh() {
+    [ -n "${TODO_NO_SYNC:-}" ] && return 0
+    [ -d "$TODO_DIR/.git" ] || return 0
+    local branch behind
+    branch=$(git -C "$TODO_DIR" symbolic-ref --short -q HEAD 2>/dev/null || echo master)
+    GIT_SSH_COMMAND="ssh $TODO_SSH_OPTS" \
+        git -C "$TODO_DIR" fetch --quiet "$TODO_HUB_REMOTE" "$branch" 2>/dev/null || return 0
+    behind=$(git -C "$TODO_DIR" rev-list --count HEAD..FETCH_HEAD 2>/dev/null || echo 0)
+    [ "${behind:-0}" -gt 0 ] || return 0            # nothing new on the hub
+    (
+        flock 9
+        if ! git -C "$TODO_DIR" pull --rebase --quiet "$TODO_HUB_REMOTE" "$branch" 2>/dev/null; then
+            git -C "$TODO_DIR" rebase --abort 2>/dev/null || true
+        fi
+    ) 9>"$LOCK"
 }
 
 cmd_sync() {

@@ -100,15 +100,14 @@ locally, keeping `add`/`done` instant. Publishing the commit to the hub is a
   `todo-sync.path` for dev on the workstation (deployed by *my-system*), and
   `hs-todo-sync.path` on the home-server (deployed by *home-server*). So a change
   on either box reaches the hub the moment it is committed.
-- **Fan-out to the workstation.** The hub's bare repo carries a `post-receive`
-  hook (installed by *home-server*) that, on any push, best-effort nudges the
-  workstation to pull — so server-side changes (fresh `meta`, or a `done` marked
-  on the server) propagate to the workstation without it polling. It is
-  backgrounded and bounded, and simply no-ops when the workstation is asleep or
-  its reverse-ssh alias isn't configured; the workstation then catches up on its
-  next own commit-sync. (The workstation reaches the server via the `todo-hub`
-  ssh alias; the reverse direction needs a matching `todo-workstation` alias +
-  key on the server — kept out of the repos, like `todo-hub`.)
+- **Pull on read.** `list` and `show` do a bounded, best-effort `git fetch` and
+  rebase-pull *only when the hub is actually ahead* (see `read_refresh`), so the
+  moment you look you see the other box's latest — fresh `meta` from classify, or
+  a `done` marked on the server. This is what gets server-side changes to the
+  workstation: the workstation always reaches the hub, so it pulls when *it* reads
+  rather than the (unreachable, often-asleep) desktop being pushed to. No
+  reverse-ssh, no polling daemon, no timer. An unreachable hub is skipped quickly
+  and the local state is shown; `TODO_NO_SYNC=1` disables the refresh.
 - **The only timer is on the server, for classification** (`hs-todo-classify`),
   not for sync.
 
