@@ -6,14 +6,17 @@
 #   Classification is deferred and batched via a headless `claude -p` call,
 #   so its reasoning never enters the session you captured from.
 #
-# The store is THREE append-only JSONL streams, each written by a single
-# writer-box, so two machines sharing one git hub never rewrite the same file
-# and `git pull --rebase` always applies cleanly (no merge driver needed):
+# Code and DATA are separate repos: this tool lives in TODO_DIR (public on GitHub);
+# the actual items live in TODO_STORE_DIR, a repo synced only over the private hub
+# (never GitHub). The store is THREE append-only JSONL streams:
 #
 #   captures.jsonl  {id, created, text}                         <- `add`  (workstation)
-#   status.jsonl    {id, status: open|done|removed, ts}         <- lifecycle (workstation)
+#   status.jsonl    {id, status: open|done|removed, ts}         <- lifecycle (either box)
 #   meta.jsonl      {id, title, repo, type, tags, priority,     <- `classify` (home-server)
 #                    dupe_of, classified_at}
+#
+# captures/meta are single-writer; status.jsonl is `merge=union` (both boxes append),
+# so `git pull --rebase` over the hub always applies cleanly.
 #
 # Two orthogonal axes replace the old coupled status field:
 #   - classification-state is DERIVED: an id is "classified" iff a meta record
@@ -24,7 +27,11 @@
 # `list`/`show` FOLD the three streams by id at read time. See README.md.
 set -euo pipefail
 
+# TODO_DIR is the CODE/tool dir (this repo: bin, classify prompt, scripts). The
+# actual todo data lives in a SEPARATE repo, TODO_STORE_DIR, which syncs only over
+# the private hub and never goes to GitHub. All git operations here act on the store.
 TODO_DIR="${TODO_DIR:-/srv/dev/repos/todo}"
+TODO_STORE_DIR="${TODO_STORE_DIR:-/srv/dev/repos/todo-store}"
 TODO_MODEL="${TODO_MODEL:-haiku}"
 TODO_FALLBACK_MODEL="${TODO_FALLBACK_MODEL:-}"   # empty = none; if set, use a Sonnet-4-or-lower id, NOT the `sonnet` alias
 TODO_REPOLIST="${TODO_REPOLIST:-/srv/dev/repos/my-system/users/dev/sections/repo-descriptions.md}"
@@ -35,22 +42,23 @@ TODO_CLASSIFY_REMOTE="${TODO_CLASSIFY_REMOTE:-}"   # e.g. dev@home-server; set =
 TODO_REMOTE_CLASSIFY_CMD="${TODO_REMOTE_CLASSIFY_CMD:-todo classify}"  # command run over ssh on the remote
 TODO_SSH_OPTS="${TODO_SSH_OPTS:--o ConnectTimeout=8 -o BatchMode=yes}"  # keep sync non-blocking / non-interactive
 
-CAPTURES="$TODO_DIR/captures.jsonl"
-STATUS="$TODO_DIR/status.jsonl"
-META="$TODO_DIR/meta.jsonl"
-SEQ="$TODO_DIR/.seq"
-LOCK="$TODO_DIR/.lock"
-LOGDIR="$TODO_DIR/logs"
+# Data streams live in the store repo; only the classify PROMPT is code (TODO_DIR).
+CAPTURES="$TODO_STORE_DIR/captures.jsonl"
+STATUS="$TODO_STORE_DIR/status.jsonl"
+META="$TODO_STORE_DIR/meta.jsonl"
+SEQ="$TODO_STORE_DIR/.seq"
+LOCK="$TODO_STORE_DIR/.lock"
+LOGDIR="$TODO_STORE_DIR/logs"
 PROMPT="$TODO_DIR/classify/system-prompt.md"
 
 # Legacy (pre-stream) store files, kept only to detect an un-migrated store.
-OLD_INBOX="$TODO_DIR/inbox.jsonl"
-OLD_TODOS="$TODO_DIR/todos.jsonl"
+OLD_INBOX="$TODO_STORE_DIR/inbox.jsonl"
+OLD_TODOS="$TODO_STORE_DIR/todos.jsonl"
 
 # Group that must retain write access to the store. Derived from the (setgid)
 # store dir so ethan's `todo-capture` (member of that group, but not the file
 # owner) can always append to the shared streams. See fix_perms.
-STORE_GROUP=$(stat -c %G "$TODO_DIR" 2>/dev/null || echo developers)
+STORE_GROUP=$(stat -c %G "$TODO_STORE_DIR" 2>/dev/null || echo developers)
 
 die() { printf 'todo: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'todo: %s\n' "$*" >&2; }
@@ -62,7 +70,7 @@ now() { date -Iseconds; }
 # Ensure the stream files exist (a fresh clone or a bad TODO_DIR shouldn't crash
 # a command). Warns once if an un-migrated legacy store is detected.
 ensure_store() {
-    [ -d "$TODO_DIR" ] || die "TODO_DIR does not exist: $TODO_DIR"
+    [ -d "$TODO_STORE_DIR" ] || die "TODO_STORE_DIR does not exist: $TODO_STORE_DIR"
     if { [ -s "$OLD_INBOX" ] || [ -s "$OLD_TODOS" ]; } && [ ! -s "$CAPTURES" ]; then
         warn "legacy store detected (inbox.jsonl/todos.jsonl) but no captures.jsonl."
         warn "run scripts/migrate-streams.sh once to convert to the stream model."
@@ -95,9 +103,9 @@ next_id() {
 # Commit the store if anything changed. Local only; never pushes, never needs auth.
 commit() {
     fix_perms
-    git -C "$TODO_DIR" add -A 2>/dev/null || return 0
-    git -C "$TODO_DIR" diff --cached --quiet 2>/dev/null && return 0
-    git -C "$TODO_DIR" commit -q -m "$1" 2>/dev/null || true
+    git -C "$TODO_STORE_DIR" add -A 2>/dev/null || return 0
+    git -C "$TODO_STORE_DIR" diff --cached --quiet 2>/dev/null && return 0
+    git -C "$TODO_STORE_DIR" commit -q -m "$1" 2>/dev/null || true
 }
 
 # Append one status event (open|done|removed) for an id. Call under the lock.
@@ -346,11 +354,11 @@ cmd_rm() {
 # declared `merge=union` (.gitattributes), so a rebase never hits a content conflict.
 sync_pull() {
     local branch
-    branch=$(git -C "$TODO_DIR" symbolic-ref --short -q HEAD 2>/dev/null || echo master)
+    branch=$(git -C "$TODO_STORE_DIR" symbolic-ref --short -q HEAD 2>/dev/null || echo master)
     (
         flock 9
-        if ! git -C "$TODO_DIR" pull --rebase --quiet "$TODO_HUB_REMOTE" "$branch" 2>/dev/null; then
-            git -C "$TODO_DIR" rebase --abort 2>/dev/null || true
+        if ! git -C "$TODO_STORE_DIR" pull --rebase --quiet "$TODO_HUB_REMOTE" "$branch" 2>/dev/null; then
+            git -C "$TODO_STORE_DIR" rebase --abort 2>/dev/null || true
             warn "sync: pull from '$TODO_HUB_REMOTE' failed/unreachable (kept local state)"
             return 0
         fi
@@ -358,7 +366,7 @@ sync_pull() {
 }
 
 sync_push() {
-    git -C "$TODO_DIR" push --quiet "$TODO_HUB_REMOTE" 2>/dev/null \
+    git -C "$TODO_STORE_DIR" push --quiet "$TODO_HUB_REMOTE" 2>/dev/null \
         || warn "sync: push to '$TODO_HUB_REMOTE' failed/unreachable (will retry next sync)"
 }
 
@@ -372,17 +380,17 @@ sync_push() {
 # Set TODO_NO_SYNC=1 to skip (offline/batch/tests).
 read_refresh() {
     [ -n "${TODO_NO_SYNC:-}" ] && return 0
-    [ -d "$TODO_DIR/.git" ] || return 0
+    [ -d "$TODO_STORE_DIR/.git" ] || return 0
     local branch behind
-    branch=$(git -C "$TODO_DIR" symbolic-ref --short -q HEAD 2>/dev/null || echo master)
+    branch=$(git -C "$TODO_STORE_DIR" symbolic-ref --short -q HEAD 2>/dev/null || echo master)
     GIT_SSH_COMMAND="ssh $TODO_SSH_OPTS" \
-        git -C "$TODO_DIR" fetch --quiet "$TODO_HUB_REMOTE" "$branch" 2>/dev/null || return 0
-    behind=$(git -C "$TODO_DIR" rev-list --count HEAD..FETCH_HEAD 2>/dev/null || echo 0)
+        git -C "$TODO_STORE_DIR" fetch --quiet "$TODO_HUB_REMOTE" "$branch" 2>/dev/null || return 0
+    behind=$(git -C "$TODO_STORE_DIR" rev-list --count HEAD..FETCH_HEAD 2>/dev/null || echo 0)
     [ "${behind:-0}" -gt 0 ] || return 0            # nothing new on the hub
     (
         flock 9
-        if ! git -C "$TODO_DIR" pull --rebase --quiet "$TODO_HUB_REMOTE" "$branch" 2>/dev/null; then
-            git -C "$TODO_DIR" rebase --abort 2>/dev/null || true
+        if ! git -C "$TODO_STORE_DIR" pull --rebase --quiet "$TODO_HUB_REMOTE" "$branch" 2>/dev/null; then
+            git -C "$TODO_STORE_DIR" rebase --abort 2>/dev/null || true
         fi
     ) 9>"$LOCK"
 }
