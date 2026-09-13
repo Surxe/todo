@@ -129,6 +129,40 @@ warns, so capture never blocks off-network. The classify job's hub pull
 sync can never leave conflict markers in a stream (which would break the `jq`
 folds). See the my-system and home-server repos for the deploy wiring.
 
+## Store setup (bootstrap a box)
+
+The installers (`my-system` `dev-todo-sync.sh`, `home-server` `todo/install.sh`)
+wire an **existing** store: they ensure the `hub` remote and, if the working clone
+is missing, **`git clone`** it from the bare (which sets the `master` upstream and
+checks out the default branch). So adding/rebuilding a box is just running that
+box's installer — no manual git.
+
+First-time bootstrap (once per ecosystem — the bare hub does not exist yet), run on
+the home-server:
+
+```sh
+# 1. the private bare hub (default branch = master; core data lives on master)
+git init --bare -b master /srv/dev/repos/todo-store.git
+
+# 2. seed a working clone from current data and push it
+mkdir -p /srv/dev/repos/todo-store && cd /srv/dev/repos/todo-store
+git init -b master
+cp /path/to/{captures,status,meta}.jsonl .        # or start empty
+printf '%s\n' 'status.jsonl merge=union' > .gitattributes
+printf '%s\n' .seq '*.lock' 'logs/' '.store.*' > .gitignore
+git add -A && git commit -m "init todo-store"
+git remote add hub /srv/dev/repos/todo-store.git
+git push -u hub master                            # -u sets the upstream
+
+# 3. the workstation then just clones (its installer does this automatically):
+#    git clone ssh://todo-hub/srv/dev/repos/todo-store.git /srv/dev/repos/todo-store
+```
+
+> `sync_push` pushes by explicit refspec, so a clone works even without an upstream
+> configured; the installers still set one for clean `git pull`/status ergonomics.
+> A workstation clone is marked `core.sharedRepository=group` so both `dev` and
+> `ethan` can commit to the shared store.
+
 ## Classification
 
 `todo classify` batches all un-classified captures (those with no `meta.jsonl`
