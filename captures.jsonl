@@ -93,3 +93,4 @@
 {"id":"t-0104","created":"2026-09-12T19:02:02-05:00","text":"disable yellow mushroom from autopin in valheim server map mod config"}
 {"id":"t-0105","created":"2026-09-12T22:16:56-05:00","text":"improve llm's direct detection of the active hostname"}
 {"id":"t-0106","created":"2026-09-13T10:08:27-05:00","text":"valheim-server enable achievements override"}
+{"id":"t-0107","created":"2026-09-13T10:43:25-05:00","text":"update gh readmes with new dev-env repo docs"}
