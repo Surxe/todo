@@ -35,11 +35,6 @@ TODO_CLASSIFY_REMOTE="${TODO_CLASSIFY_REMOTE:-}"   # e.g. dev@home-server; set =
 TODO_REMOTE_CLASSIFY_CMD="${TODO_REMOTE_CLASSIFY_CMD:-todo classify}"  # command run over ssh on the remote
 TODO_SSH_OPTS="${TODO_SSH_OPTS:--o ConnectTimeout=8 -o BatchMode=yes}"  # keep sync non-blocking / non-interactive
 
-# Route git's own hub transport (push/pull) through the same bounded, non-interactive
-# ssh as the classify trigger, so an unreachable hub fails fast on ConnectTimeout
-# instead of hanging a `done`/`sync`. Only affects git ssh; classify uses its own.
-export GIT_SSH_COMMAND="ssh $TODO_SSH_OPTS"
-
 CAPTURES="$TODO_DIR/captures.jsonl"
 STATUS="$TODO_DIR/status.jsonl"
 META="$TODO_DIR/meta.jsonl"
@@ -320,7 +315,6 @@ cmd_done() {
     capture_exists "$id" || die "no such todo: $id"
     ( flock 9; append_status "$id" done; commit "done $id"; ) 9>"$LOCK"
     echo "done $id"
-    auto_sync
 }
 
 cmd_reopen() {
@@ -330,7 +324,6 @@ cmd_reopen() {
     capture_exists "$id" || die "no such todo: $id"
     ( flock 9; append_status "$id" open; commit "reopen $id"; ) 9>"$LOCK"
     echo "reopened $id"
-    auto_sync
 }
 
 cmd_rm() {
@@ -340,7 +333,6 @@ cmd_rm() {
     capture_exists "$id" || die "no such todo: $id"
     ( flock 9; append_status "$id" removed; commit "rm $id"; ) 9>"$LOCK"
     echo "removed $id"
-    auto_sync
 }
 
 # --- cross-box sync over the git hub (best-effort; never blocks capture) -------
@@ -366,19 +358,6 @@ sync_pull() {
 sync_push() {
     git -C "$TODO_DIR" push --quiet "$TODO_HUB_REMOTE" 2>/dev/null \
         || warn "sync: push to '$TODO_HUB_REMOTE' failed/unreachable (will retry next sync)"
-}
-
-# Best-effort publish+refresh of the shared hub after a local lifecycle change, so
-# a `done`/`reopen`/`rm` on EITHER box reaches the other automatically (pull first
-# to fold in the other box's events, then push ours). Non-blocking by design: an
-# unreachable hub degrades to a warning and keeps local state (a later `todo sync`
-# or classify reconciles). status.jsonl's union merge (see .gitattributes) keeps
-# the two boxes' appends conflict-free. Set TODO_NO_SYNC=1 to skip (offline/batch).
-auto_sync() {
-    [ -n "${TODO_NO_SYNC:-}" ] && return 0
-    [ -d "$TODO_DIR/.git" ] || return 0
-    sync_pull
-    sync_push
 }
 
 cmd_sync() {

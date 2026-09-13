@@ -48,15 +48,23 @@ enrich them.
 ## Data model
 
 Three append-only JSON-lines streams, all tracked in git — the history is the
-archive. Each stream has a **single writer-box**, so two machines sharing one git
-hub never rewrite the same file and `git pull --rebase` always applies cleanly
-(no merge driver, no resolver, no host-prefixed ids):
+archive:
 
-- `captures.jsonl` — `{id, created, text}` — written by `add` (workstation).
-- `status.jsonl` — `{id, status: open|done|removed, ts}` — written by the
-  lifecycle commands (workstation); append-only events, latest per id wins.
+- `captures.jsonl` — `{id, created, text}` — written by `add` (**workstation only**).
+- `status.jsonl` — `{id, status: open|done|removed, ts}` — lifecycle events,
+  written by `done`/`reopen`/`rm` on **either box**; append-only, latest per id wins.
 - `meta.jsonl` — `{id, title, repo, type, tags, priority, dupe_of, classified_at}`
-  — written by `classify` (home-server).
+  — written by `classify` (**home-server only**).
+
+`captures.jsonl` and `meta.jsonl` keep a **single writer-box** each, so their
+appends never diverge and `git pull --rebase` applies them cleanly. `status.jsonl`
+is the exception — both boxes append to it (you can mark something done wherever
+you are), so two independent tail-appends would otherwise rebase-conflict. It is
+declared `merge=union` in `.gitattributes`: the driver keeps **both** sides' added
+lines instead of conflicting, and since the fold takes `max_by(.ts)` per id,
+duplicate or out-of-order lines are harmless. This is what keeps cross-box status
+conflict-free; do **not** rewrite `status.jsonl` in place (that would reintroduce
+real conflicts) — only append.
 
 Two orthogonal axes replace the old coupled status: **classification-state** is
 *derived* (an id is classified iff a `meta.jsonl` record exists — classify only
@@ -76,13 +84,39 @@ writer-box mints ids — no collisions). `next_id` derives from the max capture 
 
 The store is shared between the workstation and the headless home-server via a
 **bare git repo on the home-server** (the source of truth; the `hub` remote on
-each clone). Captures/status originate on the workstation and are published to the
-hub; **classification runs exclusively on the home-server** (a daily timer), so
-`classify` on the workstation becomes a remote trigger: it pushes, runs `classify`
-on the server over SSH (`$TODO_CLASSIFY_REMOTE`), then pulls the enriched meta
-back. All sync is best-effort — an unreachable hub leaves the local commit intact
-and warns, so capture never blocks when off-network. See the my-system and
-home-server repos for the deploy wiring (SSH key, push-on-add trigger, timer).
+each clone). **Classification runs exclusively on the home-server** (it owns the
+`claude` credentials), so `classify` on the workstation is a remote trigger: it
+pushes, runs the classify job on the server over SSH (`$TODO_CLASSIFY_REMOTE` →
+home-server's `todo/classify-drain.sh`), then pulls the enriched meta back.
+
+### Sync is event-driven, not polled
+
+`bin/todo` itself never touches the network on a mutation — it only commits
+locally, keeping `add`/`done` instant. Publishing the commit to the hub is a
+**separate, out-of-process systemd job**, so no command ever blocks on ssh:
+
+- **Push on commit (both boxes).** A systemd `.path` unit watches
+  `.git/logs/HEAD` and runs `todo sync` (pull+push) on every local commit —
+  `todo-sync.path` for dev on the workstation (deployed by *my-system*), and
+  `hs-todo-sync.path` on the home-server (deployed by *home-server*). So a change
+  on either box reaches the hub the moment it is committed.
+- **Fan-out to the workstation.** The hub's bare repo carries a `post-receive`
+  hook (installed by *home-server*) that, on any push, best-effort nudges the
+  workstation to pull — so server-side changes (fresh `meta`, or a `done` marked
+  on the server) propagate to the workstation without it polling. It is
+  backgrounded and bounded, and simply no-ops when the workstation is asleep or
+  its reverse-ssh alias isn't configured; the workstation then catches up on its
+  next own commit-sync. (The workstation reaches the server via the `todo-hub`
+  ssh alias; the reverse direction needs a matching `todo-workstation` alias +
+  key on the server — kept out of the repos, like `todo-hub`.)
+- **The only timer is on the server, for classification** (`hs-todo-classify`),
+  not for sync.
+
+All sync is best-effort: an unreachable hub leaves the local commit intact and
+warns, so capture never blocks off-network. The classify job's hub pull
+(`classify-drain.sh`) **aborts a failed rebase** before continuing, so a bad
+sync can never leave conflict markers in a stream (which would break the `jq`
+folds). See the my-system and home-server repos for the deploy wiring.
 
 ## Classification
 
