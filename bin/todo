@@ -310,11 +310,22 @@ cmd_list() {
 }
 
 cmd_show() {
-    [ "$#" -eq 1 ] || die "usage: todo show <id>"
+    [ "$#" -le 1 ] || die "usage: todo show [<id>|latest]"
     ensure_store
     read_refresh   # reflect the other box's latest before rendering
-    local r; r=$(fold | jq -c --arg id "$1" '.[] | select(.id==$id)')
-    [ -n "$r" ] || die "no such todo: $1"
+    local sel="${1:-latest}" r
+    case "$sel" in
+        latest|last|-)
+            # Newest non-removed capture: fold already drops "removed", so pick the
+            # max id (ids are monotonic, minted by `add`, so highest = most recent).
+            r=$(fold | jq -c 'sort_by(.id | ltrimstr("t-") | tonumber) | last // empty')
+            [ -n "$r" ] || die "no todos yet"
+            ;;
+        *)
+            r=$(fold | jq -c --arg id "$sel" '.[] | select(.id==$id)')
+            [ -n "$r" ] || die "no such todo: $sel"
+            ;;
+    esac
     jq . <<<"$r"
 }
 
@@ -415,7 +426,8 @@ usage: todo <command> [args]
   classify                             classify un-classified captures (dev only;
                                        runs on the home-server when configured)
   list [--repo X|--type T|--all|--done]  list todos (instant; includes unclassified)
-  show <id>                            print a record (or just `todo <id>`)
+  show [<id>|latest]                   print a record (or just `todo <id>`);
+                                       no id / `latest` shows the newest todo
   done <id> | reopen <id> | rm <id>    lifecycle (append-only status events)
   sync                                 pull + push the shared git hub (best-effort)
 EOF
@@ -428,6 +440,7 @@ main() {
         classify) cmd_classify "$@";;
         list|ls)  cmd_list "$@";;
         show)     cmd_show "$@";;
+        latest|last) cmd_show latest;;
         done)     cmd_done "$@";;
         reopen)   cmd_reopen "$@";;
         rm)       cmd_rm "$@";;
