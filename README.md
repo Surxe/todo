@@ -29,6 +29,7 @@ todo add <text…>                 # instant capture (no model, no network)
 todo classify                    # classify un-classified captures (runs on the home-server when configured)
 todo list [--repo X] [--type idea|task] [--all] [--done]
 todo show <id>                   # or just `todo <id>` (bare-id shorthand)
+todo show [latest]               # newest todo (no id, `latest`/`last`, or `todo latest`)
 todo done <id>
 todo reopen <id>
 todo rm <id>
