@@ -67,7 +67,9 @@ the archive:
 - `meta.jsonl` — `{id, title, repo, type, tags, priority, dupe_of, classified_at}`
   — written by `classify` (**home-server only**).
 
-`captures.jsonl` and `meta.jsonl` keep a **single writer-box** each, so their
+`captures.jsonl` and `meta.jsonl` keep a **single writer-box** each (enforced for
+captures: a box whose store clone has `git config todo.capture false` refuses `add`;
+the home-server installer sets it), so their
 appends never diverge and `git pull --rebase` applies them cleanly. `status.jsonl`
 is the exception — both boxes append to it (you can mark something done wherever
 you are), so two independent tail-appends would otherwise rebase-conflict. It is

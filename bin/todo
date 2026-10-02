@@ -154,8 +154,21 @@ fold() {
 # ---------------------------------------------------------------------------
 
 cmd_add() {
-    [ "$#" -gt 0 ] || die "usage: todo add <text…>"
+    # Flags are never todo text: `todo add --help` once captured "--help" as an item.
+    # Use `todo add -- <text…>` to capture text that really starts with a dash.
+    case "${1:-}" in
+        -h|--help) echo "usage: todo add [--] <text…>"; return 0;;
+        --) shift;;
+        -*) die "unknown option for add: $1 (use 'todo add -- <text…>' to capture text starting with '-')";;
+    esac
+    [ "$#" -gt 0 ] || die "usage: todo add [--] <text…>"
     ensure_store
+    # captures.jsonl is single-writer: only one box may mint ids, or two boxes hand
+    # out the same t-NNNN and the hub sync conflicts forever. A box that must not
+    # capture (the home-server) sets `todo.capture=false` in its store clone's git
+    # config (its installer does this); unset means allowed (the capture box).
+    [ "$(git -C "$TODO_STORE_DIR" config --type=bool --get todo.capture 2>/dev/null || echo true)" = true ] \
+        || die "add is disabled on this box (todo.capture=false in the store's git config): captures are minted on the workstation only, so ids never collide across boxes. Capture from the workstation instead."
     local text="$*" n id created rec
     (
         flock 9
