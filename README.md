@@ -127,7 +127,9 @@ locally, keeping `add`/`done` instant. Publishing the commit to the hub is a
   not for sync.
 
 All sync is best-effort: an unreachable hub leaves the local commit intact and
-warns, so capture never blocks off-network. The classify job's hub pull
+warns, so capture never blocks off-network. A push the hub rejects because it is
+ahead (the other box committed since the last pull) warns as "rejected", not
+"unreachable"; `todo classify` pulls before it pushes to avoid that case. The classify job's hub pull
 (`classify-drain.sh`) **aborts a failed rebase** before continuing, so a bad
 sync can never leave conflict markers in a stream (which would break the `jq`
 folds). See the my-system and home-server repos for the deploy wiring.

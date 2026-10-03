@@ -194,7 +194,10 @@ cmd_classify() {
     # Cross-box: when a classify remote is configured, classification happens THERE
     # (the home-server), not here. Publish local captures/status, trigger a remote
     # classify, then pull the enriched meta back. Best-effort and non-blocking.
+    # Pull before pushing: if the other box committed since our last sync (e.g. a
+    # `done` on the server), a bare push would be rejected as behind.
     if [ -n "$TODO_CLASSIFY_REMOTE" ]; then
+        sync_pull
         sync_push
         if ! ssh $TODO_SSH_OPTS "$TODO_CLASSIFY_REMOTE" "$TODO_REMOTE_CLASSIFY_CMD"; then
             warn "remote classify on '$TODO_CLASSIFY_REMOTE' failed/unreachable; try again later"
@@ -394,10 +397,16 @@ sync_push() {
     # it works on any clone regardless of whether an upstream is configured. A bare
     # `git push` relies on branch.<name>.merge and fails ("no upstream") on a clone
     # made with `git init` + `remote add` rather than `git clone` — see README setup.
-    local branch
+    # A rejection (the hub has commits we lack) is reported as such rather than as
+    # "unreachable": the hub answered, we just need to pull first.
+    local branch err
     branch=$(git -C "$TODO_STORE_DIR" symbolic-ref --short -q HEAD 2>/dev/null || echo master)
-    git -C "$TODO_STORE_DIR" push --quiet "$TODO_HUB_REMOTE" "$branch" 2>/dev/null \
-        || warn "sync: push to '$TODO_HUB_REMOTE' failed/unreachable (will retry next sync)"
+    err=$(LC_ALL=C git -C "$TODO_STORE_DIR" push --quiet "$TODO_HUB_REMOTE" "$branch" 2>&1) && return 0
+    if grep -qE '\[rejected\]|non-fast-forward|fetch first' <<<"$err"; then
+        warn "sync: push to '$TODO_HUB_REMOTE' rejected: the hub has newer commits (run 'todo sync' to pull + push)"
+    else
+        warn "sync: push to '$TODO_HUB_REMOTE' failed/unreachable (will retry next sync)"
+    fi
 }
 
 # read_refresh: before a READ (list/show), best-effort pull the hub so it reflects
