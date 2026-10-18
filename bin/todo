@@ -41,6 +41,7 @@ TODO_HUB_REMOTE="${TODO_HUB_REMOTE:-hub}"          # git remote name for the sha
 TODO_CLASSIFY_REMOTE="${TODO_CLASSIFY_REMOTE:-}"   # e.g. dev@home-server; set => classify runs THERE
 TODO_REMOTE_CLASSIFY_CMD="${TODO_REMOTE_CLASSIFY_CMD:-todo classify}"  # command run over ssh on the remote
 TODO_SSH_OPTS="${TODO_SSH_OPTS:--o ConnectTimeout=8 -o BatchMode=yes}"  # keep sync non-blocking / non-interactive
+TODO_UNPUSHED_WARN_SECS="${TODO_UNPUSHED_WARN_SECS:-300}"  # warn when a commit sits unpushed this long; 0 = off
 
 # Data streams live in the store repo; only the classify PROMPT is code (TODO_DIR).
 CAPTURES="$TODO_STORE_DIR/captures.jsonl"
@@ -106,6 +107,29 @@ commit() {
     git -C "$TODO_STORE_DIR" add -A 2>/dev/null || return 0
     git -C "$TODO_STORE_DIR" diff --cached --quiet 2>/dev/null && return 0
     git -C "$TODO_STORE_DIR" commit -q -m "$1" 2>/dev/null || true
+    warn_unpushed
+}
+
+# Pushing is the out-of-process sync watcher's job (see README "Sync is
+# event-driven"), so if that watcher dies, commits pile up locally and the other
+# box silently never sees them. Surface that on the next mutation: warn when the
+# oldest commit not on the hub's tracking ref is older than TODO_UNPUSHED_WARN_SECS.
+# Age, not count: a healthy watcher can briefly trail a burst of commits, but it
+# pushes within seconds. Offline-only (reads the local tracking ref), never fails.
+warn_unpushed() {
+    [ -n "${TODO_NO_SYNC:-}" ] && return 0
+    [ "${TODO_UNPUSHED_WARN_SECS:-0}" -gt 0 ] 2>/dev/null || return 0
+    local branch ref oldest count age
+    branch=$(git -C "$TODO_STORE_DIR" symbolic-ref --short -q HEAD 2>/dev/null || echo master)
+    ref="refs/remotes/$TODO_HUB_REMOTE/$branch"
+    git -C "$TODO_STORE_DIR" rev-parse -q --verify "$ref" >/dev/null 2>&1 || return 0
+    count=$(git -C "$TODO_STORE_DIR" rev-list --count "$ref..HEAD" 2>/dev/null || echo 0)
+    [ "${count:-0}" -gt 0 ] || return 0
+    oldest=$(git -C "$TODO_STORE_DIR" log --format=%ct "$ref..HEAD" 2>/dev/null | tail -n1)
+    [ -n "$oldest" ] || return 0
+    age=$(( $(date +%s) - oldest ))
+    [ "$age" -ge "$TODO_UNPUSHED_WARN_SECS" ] || return 0
+    warn "sync: $count commit(s) not on '$TODO_HUB_REMOTE', oldest $(( age / 60 ))m old — is the sync watcher running (todo-sync.path / hs-todo-sync.path)? run 'todo sync' to push"
 }
 
 # Append one status event (open|done|removed) for an id. Call under the lock.
