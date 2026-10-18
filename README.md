@@ -134,6 +134,14 @@ ahead (the other box committed since the last pull) warns as "rejected", not
 sync can never leave conflict markers in a stream (which would break the `jq`
 folds). See the my-system and home-server repos for the deploy wiring.
 
+Because pushing is out of process, a dead watcher (e.g. dev's systemd user
+manager stopped) would otherwise fail silently: commits pile up locally and the
+other box just never sees them. So every mutation checks the local `hub/<branch>`
+tracking ref (no network) and **warns when the oldest unpushed commit is older
+than `TODO_UNPUSHED_WARN_SECS`** (default 300; `0` disables; `TODO_NO_SYNC=1`
+also skips it). Age rather than count, since a healthy watcher can briefly trail
+a burst of commits. `todo sync` pushes the backlog once the watcher is fixed.
+
 ## Store setup (bootstrap a box)
 
 The installers (`my-system` `dev-todo-sync.sh`, `home-server` `todo/install.sh`)
