@@ -27,6 +27,11 @@
 # `list`/`show` FOLD the three streams by id at read time. See README.md.
 set -euo pipefail
 
+# The store is shared with ethan through group `developers`. Git recreates any file
+# a pull --rebase touches using the caller's umask, so a 022 umask (e.g. a
+# non-login shell) would leave a stream 0644 and lock ethan's todo-capture out.
+umask 0002
+
 # TODO_DIR is the CODE/tool dir (this repo: bin, classify prompt, scripts). The
 # actual todo data lives in a SEPARATE repo, TODO_STORE_DIR, which syncs only over
 # the private hub and never goes to GitHub. All git operations here act on the store.
@@ -413,6 +418,7 @@ sync_pull() {
             warn "sync: pull from '$TODO_HUB_REMOTE' failed/unreachable (kept local state)"
             return 0
         fi
+        fix_perms   # the rebase may have recreated stream files
     ) 9>"$LOCK"
 }
 
@@ -455,6 +461,7 @@ read_refresh() {
         if ! git -C "$TODO_STORE_DIR" pull --rebase --quiet "$TODO_HUB_REMOTE" "$branch" 2>/dev/null; then
             git -C "$TODO_STORE_DIR" rebase --abort 2>/dev/null || true
         fi
+        fix_perms   # the rebase may have recreated stream files
     ) 9>"$LOCK"
 }
 
